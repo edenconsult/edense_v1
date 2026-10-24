@@ -17,8 +17,20 @@ class FirebaseSyncManager(private val context: Context) {
 
     private val auth get() = Firebase.auth
     private val firestore: FirebaseFirestore by lazy {
-        val dbId = context.getString(R.string.firestore_database_id)
-        FirebaseFirestore.getInstance(dbId)
+        val dbId = try {
+            context.getString(R.string.firestore_database_id)
+        } catch (e: Exception) {
+            ""
+        }
+        if (dbId.isBlank() || dbId == "(default)" || dbId.startsWith("ai-studio-android-")) {
+            FirebaseFirestore.getInstance()
+        } else {
+            try {
+                FirebaseFirestore.getInstance(dbId)
+            } catch (e: Exception) {
+                FirebaseFirestore.getInstance()
+            }
+        }
     }
 
     val currentUser get() = auth.currentUser

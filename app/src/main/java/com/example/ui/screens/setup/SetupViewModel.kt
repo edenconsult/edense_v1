@@ -91,13 +91,25 @@ class SetupViewModel(
                         if (!preserveFeedback) showSuccess(_syncMessage.value.orEmpty())
                     },
                     onFailure = { error ->
-                        val message = error.localizedMessage ?: "Unknown sync error"
-                        _errorMessage.value = "Cloud sync failed: $message"
+                        val isPermissionDenied = error.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true ||
+                            (error is com.google.firebase.firestore.FirebaseFirestoreException &&
+                             error.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)
+                        val message = if (isPermissionDenied) {
+                            "Cloud sync paused: Firestore database rules in Firebase Console (edense-99e8c) need to permit user data writes. All your data is saved safely on this device."
+                        } else {
+                            error.localizedMessage ?: "Unknown sync error"
+                        }
+                        _errorMessage.value = message
                     }
                 )
             } catch (error: Exception) {
-                val message = error.localizedMessage ?: "Unknown sync error"
-                _errorMessage.value = "Cloud sync failed: $message"
+                val isPermissionDenied = error.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
+                val message = if (isPermissionDenied) {
+                    "Cloud sync paused: Firestore database rules in Firebase Console (edense-99e8c) need to permit user data writes. All your data is saved safely on this device."
+                } else {
+                    error.localizedMessage ?: "Unknown sync error"
+                }
+                _errorMessage.value = message
             } finally {
                 _isSyncing.value = false
             }

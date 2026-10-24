@@ -18,6 +18,10 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      match /terms/{termId} {
+        allow read, write: if isOwner(userId);
+      }
+
       match /subjects/{subjectId} {
         allow read, write: if isOwner(userId);
       }
@@ -31,6 +35,10 @@ service cloud.firestore {
       }
 
       match /tasks/{taskId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /{allChildren=**} {
         allow read, write: if isOwner(userId);
       }
     }
