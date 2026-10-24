@@ -56,6 +56,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.entity.TaskEntity
+import com.example.domain.task.TaskUrgency
+import com.example.domain.task.taskUrgency
 import com.example.ui.theme.EdenseAmber
 import com.example.ui.theme.EdenseAmberContainer
 import com.example.ui.theme.EdenseGreen
@@ -270,10 +272,41 @@ fun TaskItemCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    if (task.className.isNotBlank()) {
+                        Text(
+                            text = "• ${task.className}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Text(
                         text = "• Due ${task.dueDate}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (task.isCompleted) {
+                    Text(
+                        text = "Completed",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = EdenseGreen,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                } else {
+                    val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                    val urgency = taskUrgency(task.dueDate, today)
+                    val urgencyColor = when (urgency) {
+                        TaskUrgency.OVERDUE -> MaterialTheme.colorScheme.error
+                        TaskUrgency.DUE_TODAY -> EdenseAmber
+                        TaskUrgency.DUE_SOON -> EdenseAmber
+                        TaskUrgency.UPCOMING -> EdenseGreen
+                        TaskUrgency.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Text(
+                        text = urgency.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = urgencyColor,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }

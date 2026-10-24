@@ -32,14 +32,37 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
             try {
                 val db = EdenseDatabase.getDatabase(context)
                 val calendar = db.academicCalendarDao().getCalendarDirect()
+                val terms = db.academicTermDao().getTermsDirect()
                 val todayDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
 
-                // Check vacation pause rule
-                if (isClassReminder && calendar != null && calendar.pauseAlarmsDuringVacation) {
-                    if (calendar.isVacation(todayDate)) {
-                        // Suppress notification on vacation
-                        return@launch
+                if (isClassReminder) {
+                    val blockId = intent.getStringExtra(EXTRA_BLOCK_ID)
+                    val dayOfWeek = intent.getIntExtra(EXTRA_DAY_OF_WEEK, 0)
+                    val startTime = intent.getStringExtra(EXTRA_START_TIME)
+                    if (blockId != null && dayOfWeek in 1..5 && startTime != null) {
+                        AlarmScheduler.scheduleClassReminder(
+                            context = context,
+                            blockId = blockId,
+                            subjectName = intent.getStringExtra(EXTRA_SUBJECT_NAME) ?: "Class",
+                            className = intent.getStringExtra(EXTRA_CLASS_NAME) ?: "SHS",
+                            classroom = intent.getStringExtra(EXTRA_CLASSROOM) ?: "Classroom",
+                            dayOfWeek = dayOfWeek,
+                            startTime = startTime,
+                            leadMinutes = intent.getIntExtra(EXTRA_LEAD_MINUTES, 10),
+                            academicCalendar = calendar,
+                            academicTerms = terms
+                        )
                     }
+                }
+
+                // Check vacation pause rule
+                if (isClassReminder && calendar != null &&
+                    (calendar.isManualVacationMode ||
+                        (calendar.pauseAlarmsDuringVacation &&
+                            calendar.isVacation(todayDate, terms)))
+                ) {
+                    // Suppress notification on vacation
+                    return@launch
                 }
 
                 showNotification(context, title, message, notificationId)
@@ -99,5 +122,12 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_MESSAGE = "extra_message"
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
         const val EXTRA_IS_CLASS = "extra_is_class"
+        const val EXTRA_BLOCK_ID = "extra_block_id"
+        const val EXTRA_DAY_OF_WEEK = "extra_day_of_week"
+        const val EXTRA_START_TIME = "extra_start_time"
+        const val EXTRA_LEAD_MINUTES = "extra_lead_minutes"
+        const val EXTRA_SUBJECT_NAME = "extra_subject_name"
+        const val EXTRA_CLASS_NAME = "extra_class_name"
+        const val EXTRA_CLASSROOM = "extra_classroom"
     }
 }

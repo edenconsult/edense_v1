@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.auth.AuthManager
 import com.example.data.local.entity.AcademicCalendarEntity
+import com.example.data.local.entity.AcademicTermEntity
 import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.TeacherProfileEntity
 import com.example.data.remote.FirebaseSyncManager
@@ -29,6 +30,9 @@ class SetupViewModel(
 
     val calendar: StateFlow<AcademicCalendarEntity?> = repository.academicCalendar
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val academicTerms: StateFlow<List<AcademicTermEntity>> = repository.academicTerms
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allSubjects: StateFlow<List<SubjectEntity>> = repository.allSubjects
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -96,21 +100,31 @@ class SetupViewModel(
         startDate: String,
         endDate: String,
         pauseOnVacation: Boolean,
-        manualVacation: Boolean
+        manualVacation: Boolean,
+        terms: List<AcademicTermEntity>
     ) {
         val current = calendar.value ?: AcademicCalendarEntity()
+        if (!current.copy(
+                termStartDate = startDate,
+                termEndDate = endDate
+            ).hasValidTerms(terms)
+        ) {
+            _errorMessage.value = "Enter valid, non-overlapping term dates in chronological order."
+            return
+        }
         viewModelScope.launch {
             repository.saveAcademicCalendar(
                 current.copy(
                     academicYear = academicYear.ifBlank { "2026/2027" },
                     systemType = systemType,
-                    activeTermName = termName.ifBlank { "Semester 1" },
-                    termStartDate = startDate,
-                    termEndDate = endDate,
+                    activeTermName = terms.firstOrNull()?.name?.ifBlank { termName } ?: termName,
+                    termStartDate = terms.firstOrNull()?.startDate ?: startDate,
+                    termEndDate = terms.firstOrNull()?.endDate ?: endDate,
                     pauseAlarmsDuringVacation = pauseOnVacation,
                     isManualVacationMode = manualVacation
                 )
             )
+            repository.saveAcademicTerms(terms)
         }
     }
 

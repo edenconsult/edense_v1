@@ -41,6 +41,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,7 +58,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.entity.SubjectEntity
 import com.example.domain.schedule.ClassBlock
+import com.example.domain.schedule.ClassroomAssignments
 import com.example.domain.schedule.DayScheduleStatus
+import com.example.domain.home.timeOfDayGreeting
+import com.example.domain.task.taskUrgency
 import com.example.ui.theme.EdenseAmber
 import com.example.ui.theme.EdenseAmberContainer
 import com.example.ui.theme.EdenseGreen
@@ -77,6 +81,7 @@ fun HomeScreen(
 ) {
     val currentTime by viewModel.currentTimeStr.collectAsStateWithLifecycle()
     val dateDisplay by viewModel.currentDateFormatted.collectAsStateWithLifecycle()
+    val currentDate by viewModel.currentDateStr.collectAsStateWithLifecycle()
     val profile by viewModel.teacherProfile.collectAsStateWithLifecycle()
     val calendar by viewModel.academicCalendar.collectAsStateWithLifecycle()
     val selectedSubjects by viewModel.selectedSubjects.collectAsStateWithLifecycle()
@@ -110,7 +115,7 @@ fun HomeScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Good day, ${profile?.name ?: "Teacher"}",
+                                text = "${timeOfDayGreeting(currentTime)}, ${profile?.name ?: "Teacher"}",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = EdenseNavy
@@ -300,7 +305,7 @@ fun HomeScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "${task.type} • Due ${task.dueDate} • Reminder ${task.reminderTime}",
+                                text = "${task.type} • ${taskUrgency(task.dueDate, currentDate).label} • Due ${task.dueDate} • Reminder ${task.reminderTime}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -320,8 +325,19 @@ fun HomeScreen(
             SessionLogBottomSheetContent(
                 initialBlock = loggingBlock,
                 selectedSubjects = selectedSubjects,
-                onSave = { subjectId, sessionDate, lastTopic, nextTopic, status, notes ->
-                    viewModel.logSession(subjectId, sessionDate, lastTopic, nextTopic, status, notes)
+                onSave = { subjectId, className, sessionDate, lastTopic, nextTopic, status, notes,
+                           createFollowUpTask, followUpDueDate ->
+                    viewModel.logSession(
+                        subjectId,
+                        className,
+                        sessionDate,
+                        lastTopic,
+                        nextTopic,
+                        status,
+                        notes,
+                        createFollowUpTask,
+                        followUpDueDate
+                    )
                     scope.launch { sheetState.hide() }.invokeOnCompletion {
                         showLogSheet = false
                     }
@@ -618,11 +634,42 @@ fun EmptyTimetableCard(
 fun SessionLogBottomSheetContent(
     initialBlock: ClassBlock?,
     selectedSubjects: List<SubjectEntity>,
-    onSave: (subjectId: String, sessionDate: String, lastTopic: String, nextTopic: String, status: String, notes: String) -> Unit,
+    onSave: (
+        subjectId: String,
+        className: String,
+        sessionDate: String,
+        lastTopic: String,
+        nextTopic: String,
+        status: String,
+        notes: String,
+        createFollowUpTask: Boolean,
+        followUpDueDate: String
+    ) -> Unit,
     onCancel: () -> Unit
 ) {
+    val initialSubjectId = initialBlock?.subjectId ?: selectedSubjects.firstOrNull()?.id.orEmpty()
     var selectedSubjectId by remember {
-        mutableStateOf(initialBlock?.subjectId ?: selectedSubjects.firstOrNull()?.id ?: "")
+        mutableStateOf(initialSubjectId)
+    }
+    val assignedClasses = remember(selectedSubjectId, selectedSubjects) {
+        selectedSubjects.firstOrNull { it.id == selectedSubjectId }
+            ?.assignedClasses
+            ?.let(ClassroomAssignments::parse)
+            .orEmpty()
+    }
+    var selectedClassName by remember {
+        mutableStateOf(
+            initialBlock?.className?.takeIf(String::isNotBlank)
+                ?: assignedClasses.firstOrNull().orEmpty()
+        )
+    }
+    LaunchedEffect(selectedSubjects) {
+        val subject = selectedSubjects.firstOrNull { it.id == selectedSubjectId }
+            ?: selectedSubjects.firstOrNull()?.also { selectedSubjectId = it.id }
+        if (selectedClassName.isBlank() && subject != null) {
+            selectedClassName = ClassroomAssignments.parse(subject.assignedClasses)
+                .firstOrNull().orEmpty()
+        }
     }
     var sessionDate by remember {
         mutableStateOf(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date()))
@@ -631,6 +678,16 @@ fun SessionLogBottomSheetContent(
     var nextTopic by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("COMPLETED") }
     var notes by remember { mutableStateOf("") }
+    var createFollowUpTask by remember { mutableStateOf(false) }
+    var followUpDueDate by remember {
+        mutableStateOf(
+            java.util.Calendar.getInstance().apply {
+                add(java.util.Calendar.DAY_OF_YEAR, 7)
+            }.time.let {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(it)
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -656,10 +713,35 @@ fun SessionLogBottomSheetContent(
                 selectedSubjects.forEach { sub ->
                     FilterChip(
                         selected = selectedSubjectId == sub.id,
-                        onClick = { selectedSubjectId = sub.id },
+                        onClick = {
+                            selectedSubjectId = sub.id
+                            selectedClassName = ClassroomAssignments.parse(sub.assignedClasses)
+                                .firstOrNull().orEmpty()
+                        },
                         label = { Text(sub.name) }
                     )
                 }
+            }
+        }
+
+        if (assignedClasses.isNotEmpty()) {
+            Text(
+                text = "Class:",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+            if (assignedClasses.size > 1) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    assignedClasses.forEach { className ->
+                        FilterChip(
+                            selected = selectedClassName == className,
+                            onClick = { selectedClassName = className },
+                            label = { Text(className) }
+                        )
+                    }
+                }
+            } else {
+                Text(assignedClasses.first(), style = MaterialTheme.typography.bodyMedium)
             }
         }
 
@@ -718,6 +800,24 @@ fun SessionLogBottomSheetContent(
             modifier = Modifier.fillMaxWidth()
         )
 
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = createFollowUpTask,
+                onCheckedChange = { createFollowUpTask = it },
+                enabled = nextTopic.isNotBlank(),
+                modifier = Modifier.testTag("create_follow_up_task_checkbox")
+            )
+            Text("Create a follow-up task for the next topic")
+        }
+        if (createFollowUpTask) {
+            com.example.ui.components.EdenseDatePickerField(
+                label = "Follow-up task due date",
+                dateValue = followUpDueDate,
+                onDateSelected = { followUpDueDate = it },
+                modifier = Modifier.fillMaxWidth().testTag("follow_up_due_date_input")
+            )
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
@@ -729,7 +829,17 @@ fun SessionLogBottomSheetContent(
             Button(
                 onClick = {
                     if (selectedSubjectId.isNotBlank() && lastTopic.isNotBlank()) {
-                        onSave(selectedSubjectId, sessionDate, lastTopic, nextTopic, status, notes)
+                        onSave(
+                            selectedSubjectId,
+                            selectedClassName,
+                            sessionDate,
+                            lastTopic,
+                            nextTopic,
+                            status,
+                            notes,
+                            createFollowUpTask,
+                            followUpDueDate
+                        )
                     }
                 },
                 enabled = selectedSubjectId.isNotBlank() && lastTopic.isNotBlank(),

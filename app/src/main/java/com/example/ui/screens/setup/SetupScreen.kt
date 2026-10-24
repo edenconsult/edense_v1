@@ -79,6 +79,7 @@ fun SetupScreen(
 ) {
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val calendar by viewModel.calendar.collectAsStateWithLifecycle()
+    val academicTerms by viewModel.academicTerms.collectAsStateWithLifecycle()
     val allSubjects by viewModel.allSubjects.collectAsStateWithLifecycle()
     val selectedSubjects by viewModel.selectedSubjects.collectAsStateWithLifecycle()
     val selectedCount by viewModel.selectedCount.collectAsStateWithLifecycle()
@@ -221,8 +222,18 @@ fun SetupScreen(
                 1 -> {
                     AcademicCalendarTab(
                         calendar = calendar,
-                        onSave = { year, system, term, start, end, pauseOnVacation, manualVacation ->
-                            viewModel.saveCalendar(year, system, term, start, end, pauseOnVacation, manualVacation)
+                        terms = academicTerms,
+                        onSave = { year, system, term, start, end, pauseOnVacation, manualVacation, savedTerms ->
+                            viewModel.saveCalendar(
+                                year,
+                                system,
+                                term,
+                                start,
+                                end,
+                                pauseOnVacation,
+                                manualVacation,
+                                savedTerms
+                            )
                         }
                     )
                 }
@@ -565,13 +576,27 @@ fun SubjectSelectionTab(
 @Composable
 fun AcademicCalendarTab(
     calendar: com.example.data.local.entity.AcademicCalendarEntity?,
-    onSave: (year: String, system: String, term: String, start: String, end: String, pauseOnVacation: Boolean, manualVacation: Boolean) -> Unit
+    terms: List<com.example.data.local.entity.AcademicTermEntity>,
+    onSave: (year: String, system: String, term: String, start: String, end: String, pauseOnVacation: Boolean, manualVacation: Boolean, terms: List<com.example.data.local.entity.AcademicTermEntity>) -> Unit
 ) {
+    val defaultTerm = remember(calendar) {
+        com.example.data.local.entity.AcademicTermEntity(
+            id = "active_calendar_term_1",
+            name = calendar?.activeTermName ?: "Semester 1",
+            startDate = calendar?.termStartDate ?: "2026-09-01",
+            endDate = calendar?.termEndDate ?: "2026-12-18",
+            orderIndex = 0
+        )
+    }
     var academicYear by remember(calendar) { mutableStateOf(calendar?.academicYear ?: "2026/2027") }
     var systemType by remember(calendar) { mutableStateOf(calendar?.systemType ?: "SEMESTER") }
-    var termName by remember(calendar) { mutableStateOf(calendar?.activeTermName ?: "Semester 1") }
-    var startDate by remember(calendar) { mutableStateOf(calendar?.termStartDate ?: "2026-09-01") }
-    var endDate by remember(calendar) { mutableStateOf(calendar?.termEndDate ?: "2026-12-18") }
+    var termDrafts by remember(terms, calendar) {
+        mutableStateOf(terms.ifEmpty { listOf(defaultTerm) })
+    }
+    val firstTerm = termDrafts.firstOrNull() ?: defaultTerm
+    val termName = firstTerm.name
+    val startDate = firstTerm.startDate
+    val endDate = firstTerm.endDate
     var pauseOnVacation by remember(calendar) { mutableStateOf(calendar?.pauseAlarmsDuringVacation ?: true) }
     var manualVacation by remember(calendar) { mutableStateOf(calendar?.isManualVacationMode ?: false) }
 
@@ -608,7 +633,11 @@ fun AcademicCalendarTab(
                     selected = systemType == "SEMESTER",
                     onClick = {
                         systemType = "SEMESTER"
-                        if (termName.startsWith("Term")) termName = "Semester 1"
+                        if (termName.startsWith("Term")) {
+                            termDrafts = termDrafts.mapIndexed { index, term ->
+                                if (index == 0) term.copy(name = "Semester 1") else term
+                            }
+                        }
                     },
                     label = { Text("Semester System (SHS)") }
                 )
@@ -616,39 +645,98 @@ fun AcademicCalendarTab(
                     selected = systemType == "TERM",
                     onClick = {
                         systemType = "TERM"
-                        if (termName.startsWith("Semester")) termName = "Term 1"
+                        if (termName.startsWith("Semester")) {
+                            termDrafts = termDrafts.mapIndexed { index, term ->
+                                if (index == 0) term.copy(name = "Term 1") else term
+                            }
+                        }
                     },
                     label = { Text("3-Term / Trimester") }
                 )
             }
         }
 
-        item {
-            OutlinedTextField(
-                value = termName,
-                onValueChange = { termName = it },
-                label = { Text("Current Term / Semester Name") },
-                modifier = Modifier.fillMaxWidth().testTag("term_name_input")
-            )
+        items(termDrafts.size) { index ->
+            val term = termDrafts[index]
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Term ${index + 1}",
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (termDrafts.size > 1) {
+                            IconButton(onClick = {
+                                termDrafts = termDrafts.filterIndexed { termIndex, _ -> termIndex != index }
+                                    .mapIndexed { order, item -> item.copy(orderIndex = order) }
+                            }) {
+                                Icon(Icons.Default.Close, contentDescription = "Remove term")
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = term.name,
+                        onValueChange = { value ->
+                            termDrafts = termDrafts.mapIndexed { termIndex, item ->
+                                if (termIndex == index) item.copy(name = value) else item
+                            }
+                        },
+                        label = { Text("Term / Semester Name") },
+                        modifier = Modifier.fillMaxWidth().testTag("term_name_input_$index")
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        com.example.ui.components.EdenseDatePickerField(
+                            label = "Term Start",
+                            dateValue = term.startDate,
+                            onDateSelected = { value ->
+                                termDrafts = termDrafts.mapIndexed { termIndex, item ->
+                                    if (termIndex == index) item.copy(startDate = value) else item
+                                }
+                            },
+                            modifier = Modifier.weight(1f).testTag("term_start_input_$index")
+                        )
+                        com.example.ui.components.EdenseDatePickerField(
+                            label = "Term End",
+                            dateValue = term.endDate,
+                            onDateSelected = { value ->
+                                termDrafts = termDrafts.mapIndexed { termIndex, item ->
+                                    if (termIndex == index) item.copy(endDate = value) else item
+                                }
+                            },
+                            modifier = Modifier.weight(1f).testTag("term_end_input_$index")
+                        )
+                    }
+                }
+            }
         }
 
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            OutlinedButton(
+                onClick = {
+                    termDrafts = termDrafts + com.example.data.local.entity.AcademicTermEntity(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = if (systemType == "TERM") "Term ${termDrafts.size + 1}" else "Semester ${termDrafts.size + 1}",
+                        startDate = "",
+                        endDate = "",
+                        orderIndex = termDrafts.size
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
             ) {
-                com.example.ui.components.EdenseDatePickerField(
-                    label = "Term Start",
-                    dateValue = startDate,
-                    onDateSelected = { startDate = it },
-                    modifier = Modifier.weight(1f).testTag("term_start_input")
-                )
-                com.example.ui.components.EdenseDatePickerField(
-                    label = "Term End",
-                    dateValue = endDate,
-                    onDateSelected = { endDate = it },
-                    modifier = Modifier.weight(1f).testTag("term_end_input")
-                )
+                Text("Add Term / Semester")
             }
         }
 
@@ -714,7 +802,17 @@ fun AcademicCalendarTab(
         item {
             Button(
                 onClick = {
-                    onSave(academicYear, systemType, termName, startDate, endDate, pauseOnVacation, manualVacation)
+                    val orderedTerms = termDrafts.mapIndexed { index, term -> term.copy(orderIndex = index) }
+                    onSave(
+                        academicYear,
+                        systemType,
+                        termName,
+                        startDate,
+                        endDate,
+                        pauseOnVacation,
+                        manualVacation,
+                        orderedTerms
+                    )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = EdenseNavy),
                 modifier = Modifier.fillMaxWidth().testTag("save_calendar_button")

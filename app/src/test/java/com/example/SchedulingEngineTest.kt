@@ -1,6 +1,8 @@
 package com.example
 
 import com.example.data.local.entity.PeriodEntity
+import com.example.data.local.entity.AcademicCalendarEntity
+import com.example.data.local.entity.AcademicTermEntity
 import com.example.data.local.entity.SubjectEntity
 import com.example.domain.schedule.ClassroomAssignments
 import com.example.domain.schedule.DayScheduleStatus
@@ -137,6 +139,41 @@ class SchedulingEngineTest {
             listOf("Room 9", "Room 11", "Room HE2", "Room HE3")
         ))
         assertEquals("3HE2", ClassroomAssignments.roomForClass("3HE2", classes, emptyList()))
+    }
+
+    @Test
+    fun academicCalendar_handlesGapsBetweenTermsAndFindsNextResumption() {
+        val calendar = AcademicCalendarEntity(
+            termStartDate = "2026-09-01",
+            termEndDate = "2026-12-18"
+        )
+        val terms = listOf(
+            AcademicTermEntity("term1", "Semester 1", "2026-09-01", "2026-12-18", 0),
+            AcademicTermEntity("term2", "Semester 2", "2027-01-10", "2027-04-20", 1)
+        )
+
+        assertTrue(calendar.isVacation("2026-12-25", terms))
+        assertTrue(!calendar.isVacation("2027-02-01", terms))
+        assertEquals("2027-01-10", calendar.nextTermStartDate("2026-12-25", terms))
+        assertTrue(calendar.hasValidTerms(terms))
+    }
+
+    @Test
+    fun academicCalendar_rejectsOverlappingOrInvalidTermDates() {
+        val calendar = AcademicCalendarEntity()
+        assertTrue(
+            !calendar.hasValidTerms(
+                listOf(
+                    AcademicTermEntity("term1", "Term 1", "2026-09-01", "2026-12-18", 0),
+                    AcademicTermEntity("term2", "Term 2", "2026-12-18", "2027-03-01", 1)
+                )
+            )
+        )
+        assertTrue(
+            !calendar.hasValidTerms(
+                listOf(AcademicTermEntity("term1", "Term 1", "bad-date", "2027-03-01", 0))
+            )
+        )
     }
 
     @Test

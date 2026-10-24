@@ -12,6 +12,7 @@ data class TeachingSessionEntity(
     val nextTopicPlanned: String,
     val status: String = "COMPLETED", // "COMPLETED", "PARTIAL", "SKIPPED"
     val notes: String = "",
+    val className: String = "",
     val periodBlockId: String = "",
     val createdAt: Long = System.currentTimeMillis()
 )

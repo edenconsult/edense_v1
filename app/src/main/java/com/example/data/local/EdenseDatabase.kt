@@ -8,12 +8,14 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.catalog.GhanaShsCatalog
 import com.example.data.local.dao.AcademicCalendarDao
+import com.example.data.local.dao.AcademicTermDao
 import com.example.data.local.dao.PeriodDao
 import com.example.data.local.dao.SubjectDao
 import com.example.data.local.dao.TaskDao
 import com.example.data.local.dao.TeacherProfileDao
 import com.example.data.local.dao.TeachingSessionDao
 import com.example.data.local.entity.AcademicCalendarEntity
+import com.example.data.local.entity.AcademicTermEntity
 import com.example.data.local.entity.PeriodEntity
 import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.TaskEntity
@@ -27,18 +29,20 @@ import kotlinx.coroutines.launch
     entities = [
         TeacherProfileEntity::class,
         AcademicCalendarEntity::class,
+        AcademicTermEntity::class,
         SubjectEntity::class,
         PeriodEntity::class,
         TeachingSessionEntity::class,
         TaskEntity::class
     ],
-    version = 3,
+    version = 6,
     exportSchema = false
 )
 abstract class EdenseDatabase : RoomDatabase() {
 
     abstract fun teacherProfileDao(): TeacherProfileDao
     abstract fun academicCalendarDao(): AcademicCalendarDao
+    abstract fun academicTermDao(): AcademicTermDao
     abstract fun subjectDao(): SubjectDao
     abstract fun periodDao(): PeriodDao
     abstract fun teachingSessionDao(): TeachingSessionDao
@@ -68,6 +72,45 @@ abstract class EdenseDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS academic_terms (
+                        id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        startDate TEXT NOT NULL,
+                        endDate TEXT NOT NULL,
+                        orderIndex INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO academic_terms (id, name, startDate, endDate, orderIndex)
+                    SELECT id || '_term_1', activeTermName, termStartDate, termEndDate, 0
+                    FROM academic_calendar
+                    WHERE id = 'active_calendar'
+                    """.trimIndent()
+                )
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE teaching_sessions ADD COLUMN className TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tasks ADD COLUMN className TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         @Volatile
         private var INSTANCE: EdenseDatabase? = null
 
@@ -80,6 +123,9 @@ abstract class EdenseDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_1_2)
                     .addMigrations(MIGRATION_2_3)
+                    .addMigrations(MIGRATION_3_4)
+                    .addMigrations(MIGRATION_4_5)
+                    .addMigrations(MIGRATION_5_6)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)
@@ -108,6 +154,17 @@ abstract class EdenseDatabase : RoomDatabase() {
                                         termEndDate = "2026-12-18",
                                         pauseAlarmsDuringVacation = true,
                                         isManualVacationMode = false
+                                    )
+                                )
+                                database.academicTermDao().replaceAll(
+                                    listOf(
+                                        AcademicTermEntity(
+                                            id = "active_calendar_term_1",
+                                            name = "Semester 1",
+                                            startDate = "2026-09-01",
+                                            endDate = "2026-12-18",
+                                            orderIndex = 0
+                                        )
                                     )
                                 )
                                 database.subjectDao().insertCatalog(GhanaShsCatalog.defaultCatalog)

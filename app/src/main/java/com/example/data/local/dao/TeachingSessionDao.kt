@@ -12,6 +12,9 @@ interface TeachingSessionDao {
     @Query("SELECT * FROM teaching_sessions ORDER BY sessionDate DESC, createdAt DESC")
     fun getAllSessions(): Flow<List<TeachingSessionEntity>>
 
+    @Query("SELECT * FROM teaching_sessions ORDER BY sessionDate DESC, createdAt DESC")
+    suspend fun getAllSessionsDirect(): List<TeachingSessionEntity>
+
     @Query("SELECT * FROM teaching_sessions WHERE subjectId = :subjectId ORDER BY sessionDate DESC, createdAt DESC")
     fun getSessionsForSubject(subjectId: String): Flow<List<TeachingSessionEntity>>
 
@@ -20,6 +23,9 @@ interface TeachingSessionDao {
 
     @Query("SELECT * FROM teaching_sessions WHERE subjectId = :subjectId ORDER BY sessionDate DESC, createdAt DESC LIMIT 1")
     suspend fun getLatestSessionForSubjectDirect(subjectId: String): TeachingSessionEntity?
+
+    @Query("SELECT * FROM teaching_sessions WHERE subjectId = :subjectId AND className = :className ORDER BY sessionDate DESC, createdAt DESC LIMIT 1")
+    fun getLatestSessionForClass(subjectId: String, className: String): Flow<TeachingSessionEntity?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSession(session: TeachingSessionEntity)

@@ -214,8 +214,19 @@ fun SessionsScreen(
             SessionLogBottomSheetContent(
                 initialBlock = null,
                 selectedSubjects = selectedSubjects,
-                onSave = { subjectId, sessionDate, lastTopic, nextTopic, status, notes ->
-                    viewModel.logSession(subjectId, sessionDate, lastTopic, nextTopic, status, notes)
+                onSave = { subjectId, className, sessionDate, lastTopic, nextTopic, status, notes,
+                           createFollowUpTask, followUpDueDate ->
+                    viewModel.logSession(
+                        subjectId,
+                        className,
+                        sessionDate,
+                        lastTopic,
+                        nextTopic,
+                        status,
+                        notes,
+                        createFollowUpTask,
+                        followUpDueDate
+                    )
                     scope.launch { sheetState.hide() }.invokeOnCompletion {
                         showLogSheet = false
                     }
@@ -231,7 +242,7 @@ fun SessionsScreen(
 }
 
 @Composable
-fun CarryForwardCard(item: SubjectCarryForward) {
+fun CarryForwardCard(item: ClassCarryForward) {
     val subject = item.subject
     val session = item.latestSession
 
@@ -239,7 +250,7 @@ fun CarryForwardCard(item: SubjectCarryForward) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(14.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        modifier = Modifier.fillMaxWidth().testTag("carry_forward_${subject.id}")
+        modifier = Modifier.fillMaxWidth().testTag("carry_forward_${subject.id}_${item.className}")
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -261,7 +272,7 @@ fun CarryForwardCard(item: SubjectCarryForward) {
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
-                    text = subject.assignedClasses.ifBlank { "SHS" },
+                    text = item.className.ifBlank { "Class not specified" },
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -334,7 +345,7 @@ fun CarryForwardCard(item: SubjectCarryForward) {
                 }
             } else {
                 Text(
-                    text = "No prior teaching sessions logged for this subject yet.",
+                    text = "No prior teaching sessions logged for this class yet.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -384,7 +395,7 @@ fun SessionHistoryCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = session.sessionDate,
+                        text = "${session.className.ifBlank { "Class not specified" }} • ${session.sessionDate}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

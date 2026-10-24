@@ -78,6 +78,23 @@ class FirebaseSyncManager(private val context: Context) {
                 ).await()
             }
 
+            // 2a. Sync all academic terms
+            val terms = db.academicTermDao().getTermsDirect()
+            for (term in terms) {
+                userDoc.collection("terms").document(term.id).set(
+                    mapOf(
+                        "id" to term.id,
+                        "userId" to uid,
+                        "name" to term.name,
+                        "startDate" to term.startDate,
+                        "endDate" to term.endDate,
+                        "orderIndex" to term.orderIndex,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    ),
+                    SetOptions.merge()
+                ).await()
+            }
+
             // 3. Sync Selected Subjects
             val subjects = db.subjectDao().getSelectedSubjectsDirect()
             for (sub in subjects) {
@@ -116,11 +133,25 @@ class FirebaseSyncManager(private val context: Context) {
                 ).await()
             }
 
-            // 5. Sync Teaching Sessions
-            // Reading direct list via query
-            val sessionsSnapshot = db.teachingSessionDao().getAllSessions()
-            // Sync tasks
-            val tasksSnapshot = db.taskDao().getPendingTasksForDateDirect("9999-12-31") // or all tasks
+            // 5. Sync all teaching sessions, including class-specific carry-forward data
+            val sessions = db.teachingSessionDao().getAllSessionsDirect()
+            for (session in sessions) {
+                userDoc.collection("sessions").document(session.id).set(
+                    session.toFirestoreFields(uid) +
+                        ("updatedAt" to FieldValue.serverTimestamp()),
+                    SetOptions.merge()
+                ).await()
+            }
+
+            // 6. Sync all tasks, including completed and class-specific follow-up tasks
+            val tasks = db.taskDao().getAllTasksDirect()
+            for (task in tasks) {
+                userDoc.collection("tasks").document(task.id).set(
+                    task.toFirestoreFields(uid) +
+                        ("updatedAt" to FieldValue.serverTimestamp()),
+                    SetOptions.merge()
+                ).await()
+            }
 
             Log.d("FirebaseSync", "Successfully synced Edense data to cloud for uid: $uid")
             Result.success(Unit)
@@ -129,4 +160,5 @@ class FirebaseSyncManager(private val context: Context) {
             Result.failure(e)
         }
     }
+
 }

@@ -52,15 +52,16 @@ class HomeViewModel(private val repository: EdenseRepository) : ViewModel() {
         currentTimeStr,
         repository.allPeriods,
         selectedSubjects,
-        academicCalendar
-    ) { time, periods, subjects, calendar ->
+        academicCalendar,
+        repository.academicTerms
+    ) { time, periods, subjects, calendar, terms ->
         val subjectMap = subjects.associateBy { it.id }
         val dayOfWeek = getDayOfWeekInt()
         val periodsToday = periods.filter { it.dayOfWeek == dayOfWeek }
 
         val todayDate = getCurrentDateFormatted()
-        val isVacation = calendar?.isVacation(todayDate) ?: false
-        val resumesDate = calendar?.termStartDate ?: "Next Term"
+        val isVacation = calendar?.isVacation(todayDate, terms) ?: false
+        val resumesDate = calendar?.nextTermStartDate(todayDate, terms).orEmpty()
 
         SchedulingEngine.resolveDaySchedule(
             currentTimeStr = time,
@@ -85,20 +86,26 @@ class HomeViewModel(private val repository: EdenseRepository) : ViewModel() {
 
     fun logSession(
         subjectId: String,
+        className: String,
         sessionDate: String,
         lastTopicCovered: String,
         nextTopicPlanned: String,
         status: String,
-        notes: String = ""
+        notes: String = "",
+        createFollowUpTask: Boolean = false,
+        followUpDueDate: String = ""
     ) {
         viewModelScope.launch {
             repository.logSession(
                 subjectId = subjectId,
+                className = className,
                 sessionDate = sessionDate.ifBlank { getCurrentDateFormatted() },
                 lastTopicCovered = lastTopicCovered,
                 nextTopicPlanned = nextTopicPlanned,
                 status = status,
-                notes = notes
+                notes = notes,
+                createFollowUpTask = createFollowUpTask,
+                followUpDueDate = followUpDueDate
             )
         }
     }

@@ -1,9 +1,12 @@
 package com.example.data.repository
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.example.data.alarm.AlarmScheduler
+import com.example.data.alarm.TaskReminderScheduler
 import com.example.data.local.EdenseDatabase
 import com.example.data.local.entity.AcademicCalendarEntity
+import com.example.data.local.entity.AcademicTermEntity
 import com.example.data.local.entity.PeriodEntity
 import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.TaskEntity
@@ -22,6 +25,9 @@ class EdenseRepository(
 
     val academicCalendar: Flow<AcademicCalendarEntity?> =
         database.academicCalendarDao().getCalendar()
+
+    val academicTerms: Flow<List<AcademicTermEntity>> =
+        database.academicTermDao().getTerms()
 
     val allSubjects: Flow<List<SubjectEntity>> =
         database.subjectDao().getAllSubjects()
@@ -50,6 +56,12 @@ class EdenseRepository(
     fun getLatestSessionForSubject(subjectId: String): Flow<TeachingSessionEntity?> =
         database.teachingSessionDao().getLatestSessionForSubject(subjectId)
 
+    fun getLatestSessionForClass(
+        subjectId: String,
+        className: String
+    ): Flow<TeachingSessionEntity?> =
+        database.teachingSessionDao().getLatestSessionForClass(subjectId, className)
+
     val allTasks: Flow<List<TaskEntity>> =
         database.taskDao().getAllTasks()
 
@@ -64,6 +76,39 @@ class EdenseRepository(
 
     suspend fun saveAcademicCalendar(calendar: AcademicCalendarEntity) {
         database.academicCalendarDao().insertOrUpdate(calendar)
+        rescheduleClassReminders()
+    }
+
+    suspend fun saveAcademicTerms(terms: List<AcademicTermEntity>) {
+        database.academicTermDao().replaceAll(terms)
+        rescheduleClassReminders()
+    }
+
+    suspend fun rescheduleClassReminders() {
+        val periods = database.periodDao().getAllPeriodsDirect()
+        val subjects = database.subjectDao().getSelectedSubjectsDirect().associateBy { it.id }
+        val profile = database.teacherProfileDao().getProfileDirect()
+        val calendar = database.academicCalendarDao().getCalendarDirect()
+        val terms = database.academicTermDao().getTermsDirect()
+        val leadMinutes = profile?.reminderLeadMinutes ?: 10
+
+        periods.groupBy { it.blockId }.values.forEach { blockPeriods ->
+            val period = blockPeriods.minByOrNull { it.startTime } ?: return@forEach
+            val subject = subjects[period.subjectId] ?: return@forEach
+            AlarmScheduler.cancelAlarm(appContext, period.blockId)
+            AlarmScheduler.scheduleClassReminder(
+                context = appContext,
+                blockId = period.blockId,
+                subjectName = subject.name,
+                className = period.className.ifBlank { subject.assignedClasses.ifBlank { "SHS" } },
+                classroom = period.classroom.ifBlank { subject.defaultClassroom },
+                dayOfWeek = period.dayOfWeek,
+                startTime = period.startTime,
+                leadMinutes = leadMinutes,
+                academicCalendar = calendar,
+                academicTerms = terms
+            )
+        }
     }
 
     /**
@@ -160,6 +205,8 @@ class EdenseRepository(
         val subject = database.subjectDao().getSubjectByIdDirect(subjectId)
         val profile = database.teacherProfileDao().getProfileDirect()
         val leadMinutes = profile?.reminderLeadMinutes ?: 10
+        val calendar = database.academicCalendarDao().getCalendarDirect()
+        val terms = database.academicTermDao().getTermsDirect()
 
         if (subject != null) {
             AlarmScheduler.scheduleClassReminder(
@@ -170,7 +217,9 @@ class EdenseRepository(
                 classroom = classroom.ifBlank { subject.defaultClassroom },
                 dayOfWeek = dayOfWeek,
                 startTime = selectedSlot.startTime,
-                leadMinutes = leadMinutes
+                leadMinutes = leadMinutes,
+                academicCalendar = calendar,
+                academicTerms = terms
             )
         }
     }
@@ -182,22 +231,49 @@ class EdenseRepository(
 
     suspend fun logSession(
         subjectId: String,
+        className: String,
         sessionDate: String,
         lastTopicCovered: String,
         nextTopicPlanned: String,
         status: String,
-        notes: String = ""
+        notes: String = "",
+        createFollowUpTask: Boolean = false,
+        followUpDueDate: String = ""
     ) {
         val session = TeachingSessionEntity(
             id = UUID.randomUUID().toString(),
             subjectId = subjectId,
+            className = className,
             sessionDate = sessionDate,
             lastTopicCovered = lastTopicCovered,
             nextTopicPlanned = nextTopicPlanned,
             status = status,
             notes = notes
         )
-        database.teachingSessionDao().insertSession(session)
+        val followUpTask = if (createFollowUpTask) {
+            require(nextTopicPlanned.isNotBlank()) {
+                "A planned next topic is required to create a follow-up task"
+            }
+            require(followUpDueDate.isNotBlank()) {
+                "A due date is required to create a follow-up task"
+            }
+            TaskEntity(
+                id = UUID.randomUUID().toString(),
+                subjectId = subjectId,
+                title = "Prepare next lesson: $nextTopicPlanned",
+                type = "FOLLOW_UP",
+                dueDate = followUpDueDate,
+                notes = "Created from the teaching session logged on $sessionDate.",
+                className = className
+            )
+        } else {
+            null
+        }
+        database.withTransaction {
+            database.teachingSessionDao().insertSession(session)
+            followUpTask?.let { database.taskDao().insertTask(it) }
+        }
+        followUpTask?.let { TaskReminderScheduler.schedule(appContext, it) }
     }
 
     suspend fun addTask(
@@ -219,13 +295,21 @@ class EdenseRepository(
             isCompleted = false
         )
         database.taskDao().insertTask(task)
+        TaskReminderScheduler.schedule(appContext, task)
     }
 
     suspend fun toggleTaskCompleted(id: String, isCompleted: Boolean) {
+        val task = database.taskDao().getTaskByIdDirect(id) ?: return
         database.taskDao().setTaskCompleted(id, isCompleted)
+        if (isCompleted) {
+            TaskReminderScheduler.cancel(appContext, id)
+        } else {
+            TaskReminderScheduler.schedule(appContext, task.copy(isCompleted = false))
+        }
     }
 
     suspend fun deleteTask(id: String) {
         database.taskDao().deleteTask(id)
+        TaskReminderScheduler.cancel(appContext, id)
     }
 }

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.TeachingSessionEntity
 import com.example.data.repository.EdenseRepository
+import com.example.domain.schedule.ClassroomAssignments
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,10 +15,28 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class SubjectCarryForward(
+data class ClassCarryForward(
     val subject: SubjectEntity,
+    val className: String,
     val latestSession: TeachingSessionEntity?
 )
+
+internal fun buildClassCarryForwards(
+    subjects: List<SubjectEntity>,
+    sessions: List<TeachingSessionEntity>
+): List<ClassCarryForward> = subjects.flatMap { subject ->
+    val classes = ClassroomAssignments.parse(subject.assignedClasses).ifEmpty { listOf("") }
+    classes.map { className ->
+        val latest = sessions
+            .filter { session ->
+                session.subjectId == subject.id &&
+                    (session.className == className ||
+                        (session.className.isBlank() && classes.size == 1))
+            }
+            .maxWithOrNull(compareBy({ it.sessionDate }, { it.createdAt }))
+        ClassCarryForward(subject, className, latest)
+    }
+}
 
 class SessionsViewModel(private val repository: EdenseRepository) : ViewModel() {
 
@@ -37,14 +56,11 @@ class SessionsViewModel(private val repository: EdenseRepository) : ViewModel() 
         if (filterId == null) sessions else sessions.filter { it.subjectId == filterId }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val carryForwardSummaries: StateFlow<List<SubjectCarryForward>> = combine(
+    val carryForwardSummaries: StateFlow<List<ClassCarryForward>> = combine(
         selectedSubjects,
         allSessions
     ) { subjects, sessions ->
-        subjects.map { subject ->
-            val latest = sessions.firstOrNull { it.subjectId == subject.id }
-            SubjectCarryForward(subject, latest)
-        }
+        buildClassCarryForwards(subjects, sessions)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setSubjectFilter(subjectId: String?) {
@@ -53,14 +69,27 @@ class SessionsViewModel(private val repository: EdenseRepository) : ViewModel() 
 
     fun logSession(
         subjectId: String,
+        className: String,
         sessionDate: String,
         lastTopic: String,
         nextTopic: String,
         status: String,
-        notes: String = ""
+        notes: String = "",
+        createFollowUpTask: Boolean = false,
+        followUpDueDate: String = ""
     ) {
         viewModelScope.launch {
-            repository.logSession(subjectId, sessionDate, lastTopic, nextTopic, status, notes)
+            repository.logSession(
+                subjectId,
+                className,
+                sessionDate,
+                lastTopic,
+                nextTopic,
+                status,
+                notes,
+                createFollowUpTask,
+                followUpDueDate
+            )
         }
     }
 

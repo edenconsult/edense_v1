@@ -13,5 +13,6 @@ data class TaskEntity(
     val reminderTime: String = "06:00", // HH:mm
     val isCompleted: Boolean = false,
     val notes: String = "",
+    val className: String = "",
     val createdAt: Long = System.currentTimeMillis()
 )

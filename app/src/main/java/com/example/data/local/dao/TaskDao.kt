@@ -12,6 +12,9 @@ interface TaskDao {
     @Query("SELECT * FROM tasks ORDER BY isCompleted ASC, dueDate ASC, reminderTime ASC")
     fun getAllTasks(): Flow<List<TaskEntity>>
 
+    @Query("SELECT * FROM tasks ORDER BY isCompleted ASC, dueDate ASC, reminderTime ASC")
+    suspend fun getAllTasksDirect(): List<TaskEntity>
+
     @Query("SELECT * FROM tasks WHERE isCompleted = 0 ORDER BY dueDate ASC, reminderTime ASC")
     fun getPendingTasks(): Flow<List<TaskEntity>>
 
@@ -20,6 +23,12 @@ interface TaskDao {
 
     @Query("SELECT * FROM tasks WHERE dueDate = :date AND isCompleted = 0 ORDER BY reminderTime ASC")
     suspend fun getPendingTasksForDateDirect(date: String): List<TaskEntity>
+
+    @Query("SELECT * FROM tasks WHERE isCompleted = 0 ORDER BY dueDate ASC, reminderTime ASC")
+    suspend fun getPendingTasksDirect(): List<TaskEntity>
+
+    @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1")
+    suspend fun getTaskByIdDirect(id: String): TaskEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTask(task: TaskEntity)

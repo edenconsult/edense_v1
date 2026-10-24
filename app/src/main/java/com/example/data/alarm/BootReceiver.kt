@@ -20,6 +20,9 @@ class BootReceiver : BroadcastReceiver() {
                     val subjects = db.subjectDao().getSelectedSubjectsDirect().associateBy { it.id }
                     val profile = db.teacherProfileDao().getProfileDirect()
                     val leadMinutes = profile?.reminderLeadMinutes ?: 10
+                    val calendar = db.academicCalendarDao().getCalendarDirect()
+                    val terms = db.academicTermDao().getTermsDirect()
+                    val pendingTasks = db.taskDao().getPendingTasksDirect()
 
                     for (blockPeriods in periods.groupBy { it.blockId }.values) {
                         val period = blockPeriods.minByOrNull { it.startTime } ?: continue
@@ -32,8 +35,13 @@ class BootReceiver : BroadcastReceiver() {
                             classroom = period.classroom.ifBlank { subject.defaultClassroom },
                             dayOfWeek = period.dayOfWeek,
                             startTime = period.startTime,
-                            leadMinutes = leadMinutes
+                            leadMinutes = leadMinutes,
+                            academicCalendar = calendar,
+                            academicTerms = terms
                         )
+                    }
+                    pendingTasks.forEach { task ->
+                        TaskReminderScheduler.schedule(context, task)
                     }
                 } finally {
                     pendingResult.finish()
