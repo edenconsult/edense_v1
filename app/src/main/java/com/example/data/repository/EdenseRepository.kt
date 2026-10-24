@@ -141,6 +141,27 @@ class EdenseRepository(
         return true
     }
 
+    suspend fun addCustomSubject(name: String, category: String): Boolean {
+        val normalizedName = name.trim().replace(Regex("\\s+"), " ")
+        require(normalizedName.isNotBlank()) { "Enter a subject name." }
+        require(category == "CORE" || category == "ELECTIVE") {
+            "Choose a valid subject category."
+        }
+        if (database.subjectDao().getSubjectByNameDirect(normalizedName) != null) {
+            return false
+        }
+
+        database.subjectDao().insertOrUpdate(
+            SubjectEntity(
+                id = "custom_${UUID.randomUUID()}",
+                name = normalizedName,
+                category = category,
+                colorHex = if (category == "CORE") "#1E6F5C" else "#7C3AED"
+            )
+        )
+        return true
+    }
+
     suspend fun deselectSubject(subjectId: String) {
         database.subjectDao().updateSubjectSelection(
             id = subjectId,

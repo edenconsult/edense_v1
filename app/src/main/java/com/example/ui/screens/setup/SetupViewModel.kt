@@ -54,27 +54,52 @@ class SetupViewModel(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    private val _successMessage = MutableStateFlow<String?>(null)
+    val successMessage: StateFlow<String?> = _successMessage.asStateFlow()
+
     fun clearError() {
         _errorMessage.value = null
+        _successMessage.value = null
     }
 
     fun showError(message: String) {
+        _successMessage.value = null
         _errorMessage.value = message
+    }
+
+    fun showSuccess(message: String) {
+        _errorMessage.value = null
+        _successMessage.value = message
     }
 
     fun clearSyncMessage() {
         _syncMessage.value = null
     }
 
-    fun syncNow() {
+    fun syncNow(preserveFeedback: Boolean = false) {
         viewModelScope.launch {
+            if (!preserveFeedback) {
+                _errorMessage.value = null
+                _successMessage.value = null
+            }
             _isSyncing.value = true
-            val result = syncManager.syncLocalDataToCloud()
-            _isSyncing.value = false
-            if (result.isSuccess) {
-                _syncMessage.value = "Successfully backed up and synced to Cloud Firestore!"
-            } else {
-                _errorMessage.value = "Cloud sync failed: ${result.exceptionOrNull()?.localizedMessage}"
+            try {
+                val result = syncManager.syncLocalDataToCloud()
+                result.fold(
+                    onSuccess = {
+                        _syncMessage.value = "Successfully backed up and synced to Cloud Firestore!"
+                        if (!preserveFeedback) showSuccess(_syncMessage.value.orEmpty())
+                    },
+                    onFailure = { error ->
+                        val message = error.localizedMessage ?: "Unknown sync error"
+                        _errorMessage.value = "Cloud sync failed: $message"
+                    }
+                )
+            } catch (error: Exception) {
+                val message = error.localizedMessage ?: "Unknown sync error"
+                _errorMessage.value = "Cloud sync failed: $message"
+            } finally {
+                _isSyncing.value = false
             }
         }
     }
@@ -82,14 +107,21 @@ class SetupViewModel(
     fun saveProfile(name: String, schoolName: String, startTime: String, endTime: String) {
         val current = profile.value ?: TeacherProfileEntity()
         viewModelScope.launch {
-            repository.saveTeacherProfile(
-                current.copy(
-                    name = name.ifBlank { "Teacher" },
-                    schoolName = schoolName.ifBlank { "Senior High School" },
-                    schoolStartTime = startTime.ifBlank { "07:00" },
-                    schoolEndTime = endTime.ifBlank { "15:00" }
+            _errorMessage.value = null
+            _successMessage.value = null
+            try {
+                repository.saveTeacherProfile(
+                    current.copy(
+                        name = name.ifBlank { "Teacher" },
+                        schoolName = schoolName.ifBlank { "Senior High School" },
+                        schoolStartTime = startTime.ifBlank { "07:00" },
+                        schoolEndTime = endTime.ifBlank { "15:00" }
+                    )
                 )
-            )
+                showSuccess("Profile saved successfully.")
+            } catch (error: Exception) {
+                showError("Couldn't save profile: ${error.localizedMessage ?: "Unknown error"}")
+            }
         }
     }
 
@@ -103,6 +135,8 @@ class SetupViewModel(
         manualVacation: Boolean,
         terms: List<AcademicTermEntity>
     ) {
+        _errorMessage.value = null
+        _successMessage.value = null
         val current = calendar.value ?: AcademicCalendarEntity()
         if (!current.copy(
                 termStartDate = startDate,
@@ -113,18 +147,23 @@ class SetupViewModel(
             return
         }
         viewModelScope.launch {
-            repository.saveAcademicCalendar(
-                current.copy(
-                    academicYear = academicYear.ifBlank { "2026/2027" },
-                    systemType = systemType,
-                    activeTermName = terms.firstOrNull()?.name?.ifBlank { termName } ?: termName,
-                    termStartDate = terms.firstOrNull()?.startDate ?: startDate,
-                    termEndDate = terms.firstOrNull()?.endDate ?: endDate,
-                    pauseAlarmsDuringVacation = pauseOnVacation,
-                    isManualVacationMode = manualVacation
+            try {
+                repository.saveAcademicCalendar(
+                    current.copy(
+                        academicYear = academicYear.ifBlank { "2026/2027" },
+                        systemType = systemType,
+                        activeTermName = terms.firstOrNull()?.name?.ifBlank { termName } ?: termName,
+                        termStartDate = terms.firstOrNull()?.startDate ?: startDate,
+                        termEndDate = terms.firstOrNull()?.endDate ?: endDate,
+                        pauseAlarmsDuringVacation = pauseOnVacation,
+                        isManualVacationMode = manualVacation
+                    )
                 )
-            )
-            repository.saveAcademicTerms(terms)
+                repository.saveAcademicTerms(terms)
+                showSuccess("Academic calendar saved successfully.")
+            } catch (error: Exception) {
+                showError("Couldn't save academic calendar: ${error.localizedMessage ?: "Unknown error"}")
+            }
         }
     }
 
@@ -158,6 +197,23 @@ class SetupViewModel(
     fun deselectSubject(subjectId: String) {
         viewModelScope.launch {
             repository.deselectSubject(subjectId)
+        }
+    }
+
+    fun addCustomSubject(name: String, category: String) {
+        viewModelScope.launch {
+            try {
+                val added = repository.addCustomSubject(name, category)
+                if (!added) {
+                    showError("A subject with that name already exists.")
+                } else {
+                    showSuccess("Custom subject added successfully.")
+                }
+            } catch (error: IllegalArgumentException) {
+                showError(error.message ?: "Check the subject name and category.")
+            } catch (error: Exception) {
+                showError("Couldn't add subject: ${error.localizedMessage ?: "Unknown error"}")
+            }
         }
     }
 

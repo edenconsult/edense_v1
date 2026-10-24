@@ -83,10 +83,16 @@ fun SetupScreen(
     val allSubjects by viewModel.allSubjects.collectAsStateWithLifecycle()
     val selectedSubjects by viewModel.selectedSubjects.collectAsStateWithLifecycle()
     val selectedCount by viewModel.selectedCount.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    val successMessage by viewModel.successMessage.collectAsStateWithLifecycle()
 
     var activeTab by remember { mutableIntStateOf(0) }
+    var signInPromptResolved by remember { mutableStateOf(viewModel.currentUser.value != null) }
+    var isSigningIn by remember { mutableStateOf(false) }
     var configuringSubject by remember { mutableStateOf<SubjectEntity?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
     // Dialog configuration state
     var classInput by remember { mutableStateOf("SHS 2B") }
@@ -112,7 +118,7 @@ fun SetupScreen(
                     }
                 },
                 actions = {
-                    if (selectedCount > 0) {
+                    if (selectedCount > 0 && (signInPromptResolved || currentUser != null)) {
                         Button(
                             onClick = {
                                 viewModel.completeOnboarding()
@@ -139,6 +145,58 @@ fun SetupScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            if (errorMessage != null) {
+                SetupFeedbackBanner(
+                    message = errorMessage.orEmpty(),
+                    isError = true,
+                    onDismiss = { viewModel.clearError() }
+                )
+            } else if (successMessage != null) {
+                SetupFeedbackBanner(
+                    message = successMessage.orEmpty(),
+                    isError = false,
+                    onDismiss = { viewModel.clearError() }
+                )
+            }
+
+            if (!signInPromptResolved && currentUser == null) {
+                SetupSignInPrompt(
+                    isSigningIn = isSigningIn,
+                    onContinueOffline = { signInPromptResolved = true },
+                    onSignIn = {
+                        val activity = context as? android.app.Activity
+                        if (activity == null) {
+                            viewModel.showError(
+                                "Google Sign-In could not start because there is no active Android activity."
+                            )
+                        } else {
+                            isSigningIn = true
+                            viewModel.authManager.signInWithGoogle(
+                                activity = activity,
+                                scope = coroutineScope,
+                                onSuccess = {
+                                    isSigningIn = false
+                                    val email = viewModel.authManager.currentUser.value?.email
+                                    viewModel.showSuccess(
+                                        "Signed in as ${email ?: "your Google account"}."
+                                    )
+                                    viewModel.syncNow(preserveFeedback = true)
+                                },
+                                onError = { error ->
+                                    isSigningIn = false
+                                    viewModel.showError("Google sign-in failed: $error")
+                                },
+                                onCancelled = {
+                                    isSigningIn = false
+                                    viewModel.showError(
+                                        "Google sign-in was cancelled. No account was connected."
+                                    )
+                                }
+                            )
+                        }
+                    }
+                )
+            } else {
             TabRow(selectedTabIndex = activeTab) {
                 Tab(
                     selected = activeTab == 0,
@@ -160,43 +218,15 @@ fun SetupScreen(
                 )
             }
 
-            // Error banner if any
-            if (errorMessage != null) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = "Error",
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = errorMessage ?: "",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(onClick = { viewModel.clearError() }) {
-                            Icon(Icons.Default.Close, contentDescription = "Dismiss")
-                        }
-                    }
-                }
-            }
-
             when (activeTab) {
                 0 -> {
                     SubjectSelectionTab(
                         allSubjects = allSubjects,
                         selectedSubjects = selectedSubjects,
                         selectedCount = selectedCount,
+                        onAddCustomSubject = { name, category ->
+                            viewModel.addCustomSubject(name, category)
+                        },
                         onSelectSubject = { subject ->
                             configuringSubject = subject
                             val classes = ClassroomAssignments.parse(
@@ -246,6 +276,7 @@ fun SetupScreen(
                         }
                     )
                 }
+            }
             }
         }
     }
@@ -352,14 +383,124 @@ fun SetupScreen(
 }
 
 @Composable
+private fun SetupFeedbackBanner(
+    message: String,
+    isError: Boolean,
+    onDismiss: () -> Unit
+) {
+    val containerColor = if (isError) {
+        MaterialTheme.colorScheme.errorContainer
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer
+    }
+    val contentColor = if (isError) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        modifier = Modifier.fillMaxWidth().padding(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Info,
+                contentDescription = if (isError) "Error" else "Status",
+                tint = contentColor
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = contentColor,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = "Dismiss")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupSignInPrompt(
+    isSigningIn: Boolean,
+    onSignIn: () -> Unit,
+    onContinueOffline: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().testTag("setup_sign_in_prompt")
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    Icons.Default.School,
+                    contentDescription = null,
+                    tint = EdenseNavy,
+                    modifier = Modifier.size(40.dp)
+                )
+                Text(
+                    text = "Connect your Google account",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = EdenseNavy
+                )
+                Text(
+                    text = "Sign in before setup to back up your timetable, lesson notes, and tasks. You can also continue offline and connect an account later.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(
+                    onClick = onSignIn,
+                    enabled = !isSigningIn,
+                    colors = ButtonDefaults.buttonColors(containerColor = EdenseGreen),
+                    modifier = Modifier.fillMaxWidth().testTag("setup_google_sign_in_button")
+                ) {
+                    if (isSigningIn) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Connecting...")
+                    } else {
+                        Text("Sign in with Google")
+                    }
+                }
+                TextButton(
+                    onClick = onContinueOffline,
+                    modifier = Modifier.testTag("continue_setup_offline_button")
+                ) {
+                    Text("Continue offline")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun SubjectSelectionTab(
     allSubjects: List<SubjectEntity>,
     selectedSubjects: List<SubjectEntity>,
     selectedCount: Int,
+    onAddCustomSubject: (name: String, category: String) -> Unit,
     onSelectSubject: (SubjectEntity) -> Unit,
     onDeselectSubject: (String) -> Unit
 ) {
     var categoryFilter by remember { mutableStateOf("ALL") }
+    var showAddSubjectDialog by remember { mutableStateOf(false) }
 
     val filteredList = when (categoryFilter) {
         "CORE" -> allSubjects.filter { it.category == "CORE" }
@@ -413,6 +554,17 @@ fun SubjectSelectionTab(
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                     )
                 }
+            }
+        }
+
+        item {
+            OutlinedButton(
+                onClick = { showAddSubjectDialog = true },
+                modifier = Modifier.fillMaxWidth().testTag("add_custom_subject_button")
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Add a subject not listed")
             }
         }
 
@@ -571,6 +723,67 @@ fun SubjectSelectionTab(
             }
         }
     }
+
+    if (showAddSubjectDialog) {
+        AddCustomSubjectDialog(
+            onDismiss = { showAddSubjectDialog = false },
+            onAdd = { name, category ->
+                onAddCustomSubject(name, category)
+                showAddSubjectDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun AddCustomSubjectDialog(
+    onDismiss: () -> Unit,
+    onAdd: (name: String, category: String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("ELECTIVE") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add custom subject") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Subject name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("custom_subject_name_input")
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = category == "CORE",
+                        onClick = { category = "CORE" },
+                        label = { Text("Core") }
+                    )
+                    FilterChip(
+                        selected = category == "ELECTIVE",
+                        onClick = { category = "ELECTIVE" },
+                        label = { Text("Elective") }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onAdd(name, category) },
+                enabled = name.isNotBlank(),
+                modifier = Modifier.testTag("confirm_custom_subject_button")
+            ) {
+                Text("Add subject")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -946,13 +1159,22 @@ fun TeacherProfileTab(
                                         scope = coroutineScope,
                                         onSuccess = {
                                             isSigningIn = false
-                                            viewModel.syncNow()
+                                            val email = viewModel.authManager.currentUser.value?.email
+                                            viewModel.showSuccess(
+                                                "Signed in as ${email ?: "your Google account"}."
+                                            )
+                                            viewModel.syncNow(preserveFeedback = true)
                                         },
                                         onError = { err ->
                                             isSigningIn = false
-                                            viewModel.showError(err)
+                                            viewModel.showError("Google sign-in failed: $err")
                                         },
-                                        onCancelled = { isSigningIn = false }
+                                        onCancelled = {
+                                            isSigningIn = false
+                                            viewModel.showError(
+                                                "Google sign-in was cancelled. No account was connected."
+                                            )
+                                        }
                                     )
                                 }
                             },

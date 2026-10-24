@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
         TeachingSessionEntity::class,
         TaskEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class EdenseDatabase : RoomDatabase() {
@@ -111,6 +111,22 @@ abstract class EdenseDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO subjects (
+                        id, name, category, isSelected, assignedClasses, defaultClassroom,
+                        assignedClassrooms, targetPeriodsPerWeek, colorHex, isArchived, updatedAt
+                    ) VALUES (
+                        'elec_irs', 'Islamic Religious Studies (IRS)', 'ELECTIVE', 0, '', '',
+                        '', 0, '#0F766E', 0, 0
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: EdenseDatabase? = null
 
@@ -126,6 +142,7 @@ abstract class EdenseDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_3_4)
                     .addMigrations(MIGRATION_4_5)
                     .addMigrations(MIGRATION_5_6)
+                    .addMigrations(MIGRATION_6_7)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

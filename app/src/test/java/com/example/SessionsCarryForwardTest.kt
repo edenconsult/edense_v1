@@ -2,6 +2,7 @@ package com.example
 
 import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.TeachingSessionEntity
+import com.example.ui.screens.sessions.carryForwardStableKey
 import com.example.ui.screens.sessions.buildClassCarryForwards
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -58,5 +59,19 @@ class SessionsCarryForwardTest {
         val summaries = buildClassCarryForwards(listOf(subject), listOf(legacySession))
 
         assertEquals("Algebra", summaries.single().latestSession?.lastTopicCovered)
+    }
+
+    @Test
+    fun carryForwardListKeysAreUniqueWhenSubjectHasMultipleClasses() {
+        val subject = SubjectEntity(
+            id = "math",
+            name = "Mathematics",
+            assignedClasses = "3A9, 3A11"
+        )
+        val summaries = buildClassCarryForwards(listOf(subject), emptyList())
+
+        val keys = summaries.mapIndexed { index, item -> carryForwardStableKey(index, item) }
+
+        assertEquals(keys.size, keys.toSet().size)
     }
 }

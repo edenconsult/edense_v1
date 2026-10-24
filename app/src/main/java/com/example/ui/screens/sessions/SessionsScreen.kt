@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -125,7 +126,10 @@ fun SessionsScreen(
                         color = EdenseNavy
                     )
                 }
-                items(carryForwards, key = { it.subject.id }) { item ->
+                itemsIndexed(
+                    items = carryForwards,
+                    key = { index, item -> carryForwardStableKey(index, item) }
+                ) { _, item ->
                     CarryForwardCard(item = item)
                 }
             }
@@ -240,6 +244,9 @@ fun SessionsScreen(
         }
     }
 }
+
+internal fun carryForwardStableKey(index: Int, item: ClassCarryForward): String =
+    "${item.subject.id}:${item.className}:$index"
 
 @Composable
 fun CarryForwardCard(item: ClassCarryForward) {

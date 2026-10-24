@@ -12,6 +12,9 @@ interface SubjectDao {
     @Query("SELECT * FROM subjects ORDER BY category ASC, name ASC")
     fun getAllSubjects(): Flow<List<SubjectEntity>>
 
+    @Query("SELECT * FROM subjects ORDER BY category ASC, name ASC")
+    suspend fun getAllSubjectsDirect(): List<SubjectEntity>
+
     @Query("SELECT * FROM subjects WHERE isSelected = 1 ORDER BY name ASC")
     fun getSelectedSubjects(): Flow<List<SubjectEntity>>
 
@@ -23,6 +26,9 @@ interface SubjectDao {
 
     @Query("SELECT * FROM subjects WHERE id = :id LIMIT 1")
     suspend fun getSubjectByIdDirect(id: String): SubjectEntity?
+
+    @Query("SELECT * FROM subjects WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun getSubjectByNameDirect(name: String): SubjectEntity?
 
     @Query("SELECT COUNT(*) FROM subjects WHERE isSelected = 1")
     fun getSelectedCount(): Flow<Int>

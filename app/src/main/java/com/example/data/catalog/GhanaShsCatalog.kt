@@ -95,6 +95,12 @@ object GhanaShsCatalog {
             colorHex = "#2563EB"
         ),
         SubjectEntity(
+            id = "elec_irs",
+            name = "Islamic Religious Studies (IRS)",
+            category = "ELECTIVE",
+            colorHex = "#0F766E"
+        ),
+        SubjectEntity(
             id = "elec_french",
             name = "French",
             category = "ELECTIVE",
