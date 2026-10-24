@@ -1,0 +1,236 @@
+package com.example.ui.navigation
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.EventNote
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Assignment
+import androidx.compose.material.icons.outlined.EventNote
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.screens.home.HomeScreen
+import com.example.ui.screens.home.HomeViewModel
+import com.example.ui.screens.sessions.SessionsScreen
+import com.example.ui.screens.sessions.SessionsViewModel
+import com.example.ui.screens.setup.SetupScreen
+import com.example.ui.screens.setup.SetupViewModel
+import com.example.ui.screens.tasks.TasksScreen
+import com.example.ui.screens.tasks.TasksViewModel
+import com.example.ui.screens.timetable.TimetableScreen
+import com.example.ui.screens.timetable.TimetableViewModel
+import com.example.ui.theme.EdenseAmber
+import com.example.ui.theme.EdenseGreen
+import com.example.ui.theme.EdenseNavy
+
+enum class NavDestination(
+    val title: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
+    val tag: String
+) {
+    HOME("Now", Icons.Filled.Home, Icons.Outlined.Home, "nav_home"),
+    TIMETABLE("Timetable", Icons.Filled.EventNote, Icons.Outlined.EventNote, "nav_timetable"),
+    SESSIONS("Sessions", Icons.Filled.MenuBook, Icons.Outlined.MenuBook, "nav_sessions"),
+    TASKS("Tasks", Icons.Filled.Assignment, Icons.Outlined.Assignment, "nav_tasks")
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EdenseNav(
+    homeViewModel: HomeViewModel,
+    timetableViewModel: TimetableViewModel,
+    sessionsViewModel: SessionsViewModel,
+    tasksViewModel: TasksViewModel,
+    setupViewModel: SetupViewModel,
+    modifier: Modifier = Modifier
+) {
+    val profile by setupViewModel.profile.collectAsStateWithLifecycle()
+    val calendar by setupViewModel.calendar.collectAsStateWithLifecycle()
+    val selectedCount by setupViewModel.selectedCount.collectAsStateWithLifecycle()
+
+    var currentScreen by rememberSaveable { mutableIntStateOf(NavDestination.HOME.ordinal) }
+    var inSetupScreen by rememberSaveable { mutableStateOf(false) }
+
+    // If onboarding is not completed or 0 subjects selected, gate to setup
+    val isSetupRequired = profile?.isOnboardingCompleted != true || selectedCount == 0
+
+    if (isSetupRequired || inSetupScreen) {
+        BackHandler(enabled = !isSetupRequired && inSetupScreen) {
+            inSetupScreen = false
+        }
+        SetupScreen(
+            viewModel = setupViewModel,
+            onFinish = {
+                inSetupScreen = false
+            },
+            modifier = modifier
+        )
+        return
+    }
+
+    BackHandler(enabled = currentScreen != NavDestination.HOME.ordinal) {
+        currentScreen = NavDestination.HOME.ordinal
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(EdenseNavy),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "E",
+                                color = EdenseAmber,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Edense",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = EdenseNavy
+                            )
+                            Text(
+                                text = "${calendar?.activeTermName ?: "Semester 1"} • ${calendar?.academicYear ?: "2026/27"}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = EdenseGreen,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { inSetupScreen = true },
+                        modifier = Modifier.testTag("top_settings_button")
+                    ) {
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "School & Subject Settings",
+                            tint = EdenseNavy
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
+        bottomBar = {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surface,
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .testTag("bottom_nav_bar")
+            ) {
+                NavDestination.entries.forEach { destination ->
+                    val selected = currentScreen == destination.ordinal
+                    NavigationBarItem(
+                        selected = selected,
+                        onClick = { currentScreen = destination.ordinal },
+                        icon = {
+                            Icon(
+                                imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
+                                contentDescription = destination.title
+                            )
+                        },
+                        label = { Text(destination.title) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = EdenseNavy,
+                            selectedTextColor = EdenseNavy,
+                            indicatorColor = EdenseGreen.copy(alpha = 0.2f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        modifier = Modifier.testTag(destination.tag)
+                    )
+                }
+            }
+        },
+        modifier = modifier
+    ) { innerPadding ->
+        when (currentScreen) {
+            NavDestination.HOME.ordinal -> {
+                HomeScreen(
+                    viewModel = homeViewModel,
+                    onNavigateToTimetable = { currentScreen = NavDestination.TIMETABLE.ordinal },
+                    onNavigateToSessions = { currentScreen = NavDestination.SESSIONS.ordinal },
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+            NavDestination.TIMETABLE.ordinal -> {
+                TimetableScreen(
+                    viewModel = timetableViewModel,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+            NavDestination.SESSIONS.ordinal -> {
+                SessionsScreen(
+                    viewModel = sessionsViewModel,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+            NavDestination.TASKS.ordinal -> {
+                TasksScreen(
+                    viewModel = tasksViewModel,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+        }
+    }
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "351322768348",
+    "project_id": "edense-99e8c",
+    "storage_bucket": "edense-99e8c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:351322768348:android:3c9dccd681cfac3fe04519",
+        "android_client_info": {
+          "package_name": "com.ecreativesys.com"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-PhEdjaSAYxXg44WqDehBTuUsJd4Zd5I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

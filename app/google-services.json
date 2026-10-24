@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "351322768348",
+    "project_id": "edense-99e8c",
+    "storage_bucket": "edense-99e8c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:351322768348:android:3c9dccd681cfac3fe04519",
+        "android_client_info": {
+          "package_name": "com.ecreativesys.com"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "351322768348-jgmho0q8kln3m9bvhrmfq06u36f0no1i.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.ecreativesys.com",
+            "certificate_hash": "253b6c1745c10d42f9ecbc019bac7120e82d685f"
+          }
+        },
+        {
+          "client_id": "351322768348-qduab83hnigpu80b22r5qi030gg60d8e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-PhEdjaSAYxXg44WqDehBTuUsJd4Zd5I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "351322768348-qduab83hnigpu80b22r5qi030gg60d8e.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

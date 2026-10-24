@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "TeacherProfile": {
+      "collection": "users",
+      "fields": {
+        "userId": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "email": { "type": "string", "required": false },
+        "schoolName": { "type": "string", "required": true },
+        "schoolStartTime": { "type": "string", "required": true },
+        "schoolEndTime": { "type": "string", "required": true },
+        "reminderLeadMinutes": { "type": "number", "required": true },
+        "updatedAt": { "type": "timestamp", "required": false }
+      }
+    },
+    "AcademicCalendar": {
+      "collection": "users/{userId}/calendars",
+      "fields": {
+        "userId": { "type": "string", "required": true },
+        "academicYear": { "type": "string", "required": true },
+        "systemType": { "type": "string", "required": true },
+        "activeTermName": { "type": "string", "required": true },
+        "termStartDate": { "type": "string", "required": true },
+        "termEndDate": { "type": "string", "required": true },
+        "pauseAlarmsDuringVacation": { "type": "boolean", "required": true },
+        "isManualVacationMode": { "type": "boolean", "required": true },
+        "updatedAt": { "type": "timestamp", "required": false }
+      }
+    },
+    "Subject": {
+      "collection": "users/{userId}/subjects",
+      "fields": {
+        "userId": { "type": "string", "required": true },
+        "name": { "type": "string", "required": true },
+        "category": { "type": "string", "required": true },
+        "assignedClasses": { "type": "string", "required": false },
+        "defaultClassroom": { "type": "string", "required": false },
+        "assignedClassrooms": { "type": "string", "required": false },
+        "targetPeriodsPerWeek": { "type": "number", "required": true },
+        "colorHex": { "type": "string", "required": true },
+        "updatedAt": { "type": "timestamp", "required": false }
+      }
+    },
+    "Period": {
+      "collection": "users/{userId}/periods",
+      "fields": {
+        "userId": { "type": "string", "required": true },
+        "subjectId": { "type": "string", "required": true },
+        "dayOfWeek": { "type": "number", "required": true },
+        "startTime": { "type": "string", "required": true },
+        "endTime": { "type": "string", "required": true },
+        "blockId": { "type": "string", "required": true },
+        "className": { "type": "string", "required": false },
+        "classroom": { "type": "string", "required": false },
+        "updatedAt": { "type": "timestamp", "required": false }
+      }
+    },
+    "TeachingSession": {
+      "collection": "users/{userId}/sessions",
+      "fields": {
+        "userId": { "type": "string", "required": true },
+        "subjectId": { "type": "string", "required": true },
+        "sessionDate": { "type": "string", "required": true },
+        "lastTopicCovered": { "type": "string", "required": true },
+        "nextTopicPlanned": { "type": "string", "required": false },
+        "status": { "type": "string", "required": true },
+        "notes": { "type": "string", "required": false },
+        "createdAt": { "type": "timestamp", "required": false }
+      }
+    },
+    "Task": {
+      "collection": "users/{userId}/tasks",
+      "fields": {
+        "userId": { "type": "string", "required": true },
+        "subjectId": { "type": "string", "required": false },
+        "title": { "type": "string", "required": true },
+        "type": { "type": "string", "required": true },
+        "dueDate": { "type": "string", "required": true },
+        "reminderTime": { "type": "string", "required": true },
+        "isCompleted": { "type": "boolean", "required": true },
+        "notes": { "type": "string", "required": false },
+        "createdAt": { "type": "timestamp", "required": false }
+      }
+    }
+  }
+}

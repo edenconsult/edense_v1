@@ -1,0 +1,6 @@
+{
+  "name": "Edense",
+  "description": "Teaching State Tracker for Ghanaian SHS Teachers",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
