@@ -38,13 +38,54 @@ sealed interface DayScheduleStatus {
 }
 
 object SchedulingEngine {
-    val periodSlots: List<SchoolPeriodSlot> = buildList {
-        var start = 7 * 60
-        while (start + 60 <= 18 * 60) {
-            if (start == 9 * 60) start = 9 * 60 + 30
-            if (start == 12 * 60 + 30) start = 13 * 60
-            add(SchoolPeriodSlot(formatMinutesToTime(start), formatMinutesToTime(start + 60)))
-            start += 60
+    val periodSlots: List<SchoolPeriodSlot> = periodSlots(
+        breakfastBreakStart = "09:00",
+        breakfastBreakEnd = "09:30",
+        lunchBreakStart = "12:30",
+        lunchBreakEnd = "13:00"
+    )
+
+    fun periodSlots(
+        breakfastBreakStart: String,
+        breakfastBreakEnd: String,
+        lunchBreakStart: String,
+        lunchBreakEnd: String
+    ): List<SchoolPeriodSlot> {
+        val timePattern = Regex("(?:[01]\\d|2[0-3]):[0-5]\\d")
+        require(
+            listOf(
+                breakfastBreakStart,
+                breakfastBreakEnd,
+                lunchBreakStart,
+                lunchBreakEnd
+            ).all { it.matches(timePattern) }
+        ) {
+            "School break times must use valid HH:mm values."
+        }
+        val breaks = listOf(
+            parseTimeToMinutes(breakfastBreakStart) to parseTimeToMinutes(breakfastBreakEnd),
+            parseTimeToMinutes(lunchBreakStart) to parseTimeToMinutes(lunchBreakEnd)
+        ).sortedBy { it.first }
+        require(breaks.all { (start, end) -> start < end }) {
+            "Each school break must have a start time before its end time."
+        }
+        require(breaks.zipWithNext().none { (first, second) -> first.second > second.first }) {
+            "School breaks cannot overlap."
+        }
+
+        return buildList {
+            var start = 7 * 60
+            while (start + 60 <= 18 * 60) {
+                val intersectingBreak = breaks.firstOrNull { (breakStart, breakEnd) ->
+                    start < breakEnd && breakStart < start + 60
+                }
+                if (intersectingBreak != null) {
+                    start = intersectingBreak.second
+                } else {
+                    add(SchoolPeriodSlot(formatMinutesToTime(start), formatMinutesToTime(start + 60)))
+                    start += 60
+                }
+            }
         }
     }
 

@@ -279,8 +279,17 @@ fun SetupScreen(
                         viewModel = viewModel,
                         errorMessage = errorMessage,
                         successMessage = successMessage,
-                        onSave = { name, school, start, end ->
-                            viewModel.saveProfile(name, school, start, end)
+                        onSave = { name, school, start, end, breakfastStart, breakfastEnd, lunchStart, lunchEnd ->
+                            viewModel.saveProfile(
+                                name,
+                                school,
+                                start,
+                                end,
+                                breakfastStart,
+                                breakfastEnd,
+                                lunchStart,
+                                lunchEnd
+                            )
                         }
                     )
                 }
@@ -465,7 +474,7 @@ private fun SetupSignInPrompt(
                     color = EdenseNavy
                 )
                 Text(
-                    text = "Sign in with Google to access your school setup and keep your data backed up and synchronized when internet is available.",
+                    text = "Sign in with Google to access your school setup.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1079,14 +1088,21 @@ fun TeacherProfileTab(
     viewModel: SetupViewModel,
     errorMessage: String? = null,
     successMessage: String? = null,
-    onSave: (name: String, school: String, start: String, end: String) -> Unit
+    onSave: (
+        name: String,
+        school: String,
+        start: String,
+        end: String,
+        breakfastStart: String,
+        breakfastEnd: String,
+        lunchStart: String,
+        lunchEnd: String
+    ) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
-    val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
-    val syncMessage by viewModel.syncMessage.collectAsStateWithLifecycle()
-    var isSigningIn by remember { mutableStateOf(false) }
+    val syncState by viewModel.syncManager.syncState.collectAsStateWithLifecycle()
     val exportFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
@@ -1113,6 +1129,10 @@ fun TeacherProfileTab(
     var schoolName by remember(profile) { mutableStateOf(profile?.schoolName ?: "Achimota Senior High School") }
     var startTime by remember(profile) { mutableStateOf(profile?.schoolStartTime ?: "07:00") }
     var endTime by remember(profile) { mutableStateOf(profile?.schoolEndTime ?: "15:00") }
+    var breakfastStart by remember(profile) { mutableStateOf(profile?.breakfastBreakStart ?: "09:00") }
+    var breakfastEnd by remember(profile) { mutableStateOf(profile?.breakfastBreakEnd ?: "09:30") }
+    var lunchStart by remember(profile) { mutableStateOf(profile?.lunchBreakStart ?: "12:30") }
+    var lunchEnd by remember(profile) { mutableStateOf(profile?.lunchBreakEnd ?: "13:00") }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1171,9 +1191,67 @@ fun TeacherProfileTab(
         }
 
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "School Break Times",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Set your school's breakfast and lunch breaks. Timetable periods will avoid these times.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    com.example.ui.components.EdenseTimePickerField(
+                        label = "Breakfast starts",
+                        timeValue = breakfastStart,
+                        onTimeSelected = { breakfastStart = it },
+                        modifier = Modifier.weight(1f).testTag("breakfast_start_input")
+                    )
+                    com.example.ui.components.EdenseTimePickerField(
+                        label = "Breakfast ends",
+                        timeValue = breakfastEnd,
+                        onTimeSelected = { breakfastEnd = it },
+                        modifier = Modifier.weight(1f).testTag("breakfast_end_input")
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    com.example.ui.components.EdenseTimePickerField(
+                        label = "Lunch starts",
+                        timeValue = lunchStart,
+                        onTimeSelected = { lunchStart = it },
+                        modifier = Modifier.weight(1f).testTag("lunch_start_input")
+                    )
+                    com.example.ui.components.EdenseTimePickerField(
+                        label = "Lunch ends",
+                        timeValue = lunchEnd,
+                        onTimeSelected = { lunchEnd = it },
+                        modifier = Modifier.weight(1f).testTag("lunch_end_input")
+                    )
+                }
+            }
+        }
+
+        item {
             Button(
                 onClick = {
-                    onSave(name, schoolName, startTime, endTime)
+                    onSave(
+                        name,
+                        schoolName,
+                        startTime,
+                        endTime,
+                        breakfastStart,
+                        breakfastEnd,
+                        lunchStart,
+                        lunchEnd
+                    )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = EdenseNavy),
                 modifier = Modifier.fillMaxWidth().testTag("save_profile_button")
@@ -1248,133 +1326,52 @@ fun TeacherProfileTab(
             }
         }
 
-        // Firebase Google Sign-In & Cloud Sync Card
+        // Account controls; synchronization happens automatically.
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth().testTag("cloud_sync_card")
+                modifier = Modifier.fillMaxWidth().testTag("account_card")
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Firebase Cloud Backup & Sync",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = EdenseNavy
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Edense is 100% offline-first. Connect your Google account to securely back up your timetable, carry-forward notes, and tasks to Cloud Firestore (project edense-99e8c).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    if (currentUser == null) {
-                        Button(
-                            enabled = !isSigningIn,
-                            onClick = {
-                                val activity = context as? android.app.Activity
-                                if (activity == null) {
-                                    viewModel.showError("Google Sign-In could not start because there is no active Android activity.")
-                                } else {
-                                    isSigningIn = true
-                                    viewModel.authManager.signInWithGoogle(
-                                        activity = activity,
-                                        scope = coroutineScope,
-                                        onSuccess = {
-                                            isSigningIn = false
-                                            val email = viewModel.authManager.currentUser.value?.email
-                                            viewModel.showSuccess(
-                                                "Signed in as ${email ?: "your Google account"}."
-                                            )
-                                            viewModel.syncNow(preserveFeedback = true)
-                                        },
-                                        onError = { err ->
-                                            isSigningIn = false
-                                            viewModel.showError("Google sign-in failed: $err")
-                                        },
-                                        onCancelled = {
-                                            isSigningIn = false
-                                            viewModel.showError(
-                                                "Google sign-in was cancelled. No account was connected."
-                                            )
-                                        }
-                                    )
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = EdenseGreen),
-                            modifier = Modifier.fillMaxWidth().testTag("google_sign_in_button")
-                        ) {
-                            if (isSigningIn) {
-                                androidx.compose.material3.CircularProgressIndicator(
-                                    color = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Connecting...")
-                            } else {
-                                Text("Sign in with Google")
-                            }
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Connected Account",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = EdenseGreen
-                                )
-                                Text(
-                                    text = currentUser?.email ?: "Google Account",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    viewModel.authManager.signOut(coroutineScope) { }
-                                }
-                            ) {
-                                Text("Sign Out")
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Button(
-                            onClick = { viewModel.syncNow() },
-                            enabled = !isSyncing,
-                            colors = ButtonDefaults.buttonColors(containerColor = EdenseNavy),
-                            modifier = Modifier.fillMaxWidth().testTag("sync_now_button")
-                        ) {
-                            if (isSyncing) {
-                                androidx.compose.material3.CircularProgressIndicator(
-                                    color = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Syncing...")
-                            } else {
-                                Text("Sync to Cloud Now")
-                            }
-                        }
-
-                        if (syncMessage != null) {
-                            Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = currentUser?.displayName
+                                ?.takeIf { it.isNotBlank() }
+                                ?: currentUser?.email
+                                ?: "Signed in",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (!currentUser?.email.isNullOrBlank()) {
                             Text(
-                                text = syncMessage ?: "",
+                                text = currentUser?.email.orEmpty(),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = EdenseGreen,
-                                fontWeight = FontWeight.SemiBold
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        if (syncState is com.example.data.remote.SyncState.Syncing ||
+                            syncState is com.example.data.remote.SyncState.Checking
+                        ) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Syncing", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.authManager.signOut(coroutineScope) { } }
+                    ) {
+                        Text("Sign Out")
                     }
                 }
             }

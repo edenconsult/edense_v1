@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
         TeachingSessionEntity::class,
         TaskEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class EdenseDatabase : RoomDatabase() {
@@ -127,6 +127,23 @@ abstract class EdenseDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE teacher_profile ADD COLUMN breakfastBreakStart TEXT NOT NULL DEFAULT '09:00'"
+                )
+                db.execSQL(
+                    "ALTER TABLE teacher_profile ADD COLUMN breakfastBreakEnd TEXT NOT NULL DEFAULT '09:30'"
+                )
+                db.execSQL(
+                    "ALTER TABLE teacher_profile ADD COLUMN lunchBreakStart TEXT NOT NULL DEFAULT '12:30'"
+                )
+                db.execSQL(
+                    "ALTER TABLE teacher_profile ADD COLUMN lunchBreakEnd TEXT NOT NULL DEFAULT '13:00'"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: EdenseDatabase? = null
 
@@ -143,6 +160,7 @@ abstract class EdenseDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_4_5)
                     .addMigrations(MIGRATION_5_6)
                     .addMigrations(MIGRATION_6_7)
+                    .addMigrations(MIGRATION_7_8)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

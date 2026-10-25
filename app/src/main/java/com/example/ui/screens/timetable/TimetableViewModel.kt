@@ -8,11 +8,13 @@ import com.example.data.local.entity.SubjectEntity
 import com.example.data.repository.EdenseRepository
 import com.example.domain.schedule.ClassBlock
 import com.example.domain.schedule.SchedulingEngine
+import com.example.domain.schedule.SchoolPeriodSlot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -30,6 +32,18 @@ class TimetableViewModel(private val repository: EdenseRepository) : ViewModel()
 
     val selectedSubjects: StateFlow<List<SubjectEntity>> = repository.selectedSubjects
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val profile = repository.teacherProfile
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val periodSlots: StateFlow<List<SchoolPeriodSlot>> = profile.map { settings ->
+        SchedulingEngine.periodSlots(
+            settings?.breakfastBreakStart ?: "09:00",
+            settings?.breakfastBreakEnd ?: "09:30",
+            settings?.lunchBreakStart ?: "12:30",
+            settings?.lunchBreakEnd ?: "13:00"
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SchedulingEngine.periodSlots)
 
     val allPeriods: StateFlow<List<PeriodEntity>> = repository.allPeriods
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -79,13 +93,14 @@ class TimetableViewModel(private val repository: EdenseRepository) : ViewModel()
         isDoublePeriod: Boolean
     ) {
         viewModelScope.launch {
-            val startSlotIndex = SchedulingEngine.periodSlots.indexOfFirst { it.startTime == startTime }
+            val slots = periodSlots.value
+            val startSlotIndex = slots.indexOfFirst { it.startTime == startTime }
             if (startSlotIndex == -1) {
                 _conflictWarning.value = "Choose a valid one-hour school period."
                 return@launch
             }
-            val startSlot = SchedulingEngine.periodSlots[startSlotIndex]
-            val nextSlot = SchedulingEngine.periodSlots.getOrNull(startSlotIndex + 1)
+            val startSlot = slots[startSlotIndex]
+            val nextSlot = slots.getOrNull(startSlotIndex + 1)
             if (isDoublePeriod && (nextSlot == null || nextSlot.startMinute != startSlot.endMinute)) {
                 _conflictWarning.value = "A double period must use two consecutive periods without a break."
                 return@launch
@@ -115,7 +130,11 @@ class TimetableViewModel(private val repository: EdenseRepository) : ViewModel()
                 startTime = startTime,
                 className = className,
                 classroom = classroom,
-                isDoublePeriod = isDoublePeriod
+                isDoublePeriod = isDoublePeriod,
+                breakfastBreakStart = profile.value?.breakfastBreakStart ?: "09:00",
+                breakfastBreakEnd = profile.value?.breakfastBreakEnd ?: "09:30",
+                lunchBreakStart = profile.value?.lunchBreakStart ?: "12:30",
+                lunchBreakEnd = profile.value?.lunchBreakEnd ?: "13:00"
             )
         }
     }

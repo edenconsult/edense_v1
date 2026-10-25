@@ -17,10 +17,17 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
@@ -37,6 +44,9 @@ class FirebaseSyncManager(private val context: Context) {
 
     private val auth get() = Firebase.auth
     val networkMonitor by lazy { NetworkMonitor(context) }
+    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val uploadMutex = Mutex()
+    private var pendingSyncJob: Job? = null
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -65,6 +75,19 @@ class FirebaseSyncManager(private val context: Context) {
 
     val isOnline: Boolean
         get() = networkMonitor.isOnline
+
+    @Synchronized
+    fun requestSync() {
+        if (!isOnline || !isUserSignedIn) return
+        pendingSyncJob?.cancel()
+        pendingSyncJob = syncScope.launch {
+            delay(AUTO_SYNC_DEBOUNCE_MS)
+            val result = syncLocalDataToCloud()
+            result.exceptionOrNull()?.let { error ->
+                Log.e("FirebaseSync", "Automatic sync failed", error)
+            }
+        }
+    }
 
     /**
      * Primary startup sync: Checks internet connectivity first.
@@ -100,46 +123,48 @@ class FirebaseSyncManager(private val context: Context) {
      * then pushes local Room records to Firestore to guarantee cloud backup.
      */
     suspend fun performBidirectionalSync(uid: String): Result<Unit> = withContext(Dispatchers.IO) {
-        val db = EdenseDatabase.getDatabase(context)
+        pendingSyncJob?.cancel()
+        uploadMutex.withLock {
+            val db = EdenseDatabase.getDatabase(context)
 
-        try {
-            val userDoc = firestore.collection("users").document(uid)
-
-            // Step A: Pull remote data if local is fresh or remote has updates
-            var restoreFailure: Exception? = null
             try {
-                restoreCloudDataToLocal(uid, userDoc, db)
-            } catch (e: Exception) {
-                Log.w("FirebaseSync", "Remote restore step deferred: ${e.message}", e)
-                restoreFailure = e
-            }
-
-            // Step B: Push local data to Cloud
-            val pushResult = syncLocalDataToCloud()
-            if (pushResult.isFailure) {
-                val error = pushResult.exceptionOrNull() ?: IllegalStateException("Cloud upload failed")
-                val isPermissionDenied = error.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
-                _syncState.value = if (isPermissionDenied) {
-                    SyncState.OfflineFallback("Firestore rules pending in console. Saved locally.")
-                } else {
-                    SyncState.OfflineFallback("Sync deferred: ${error.localizedMessage ?: "saved locally"}")
+                val user = auth.currentUser
+                    ?: return@withLock Result.failure(
+                        IllegalStateException("Teacher is not signed in to Google.")
+                    )
+                if (user.uid != uid) {
+                    return@withLock Result.failure(
+                        IllegalStateException("The signed-in account changed before sync started.")
+                    )
                 }
-                return@withContext Result.failure(error)
-            }
+                _syncState.value = SyncState.Syncing
+                val userDoc = firestore.collection("users").document(uid)
 
-            if (restoreFailure != null) {
+                restoreCloudDataToLocal(uid, userDoc, db)
+
+                val pushResult = uploadLocalDataToCloud()
+                if (pushResult.isFailure) {
+                    val error = pushResult.exceptionOrNull()
+                        ?: IllegalStateException("Cloud upload failed")
+                    val isPermissionDenied =
+                        error.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
+                    _syncState.value = if (isPermissionDenied) {
+                        SyncState.OfflineFallback("Firestore rules pending in console.")
+                    } else {
+                        SyncState.OfflineFallback("Sync deferred: ${error.localizedMessage}")
+                    }
+                    return@withLock Result.failure(error)
+                }
+
+                _syncState.value = SyncState.Synced("Cloud synchronized")
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Log.e("FirebaseSync", "Bidirectional sync failed", e)
                 _syncState.value = SyncState.OfflineFallback(
-                    "Local data uploaded, but cloud restore failed: ${restoreFailure.localizedMessage ?: "unknown error"}"
+                    "Sync failed: ${e.localizedMessage ?: "unknown error"}"
                 )
-                return@withContext Result.failure(restoreFailure)
+                Result.failure(e)
             }
-
-            _syncState.value = SyncState.Synced("Cloud synchronized")
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Log.e("FirebaseSync", "Bidirectional sync failed, continuing offline", e)
-            _syncState.value = SyncState.OfflineFallback("Operating offline")
-            Result.success(Unit)
         }
     }
 
@@ -157,11 +182,20 @@ class FirebaseSyncManager(private val context: Context) {
             val existing = db.teacherProfileDao().getProfileDirect()
             val remoteProfile = TeacherProfileEntity(
                 id = "local_teacher",
-                name = profileSnap.getString("name") ?: existing?.name ?: "",
-                email = profileSnap.getString("email") ?: existing?.email ?: "",
+                name = auth.currentUser?.displayName?.takeIf { it.isNotBlank() }
+                    ?: profileSnap.getString("name") ?: existing?.name ?: "",
+                email = auth.currentUser?.email ?: profileSnap.getString("email") ?: existing?.email ?: "",
                 schoolName = profileSnap.getString("schoolName") ?: existing?.schoolName ?: "",
                 schoolStartTime = profileSnap.getString("schoolStartTime") ?: existing?.schoolStartTime ?: "07:00",
                 schoolEndTime = profileSnap.getString("schoolEndTime") ?: existing?.schoolEndTime ?: "15:00",
+                breakfastBreakStart = profileSnap.getString("breakfastBreakStart")
+                    ?: existing?.breakfastBreakStart ?: "09:00",
+                breakfastBreakEnd = profileSnap.getString("breakfastBreakEnd")
+                    ?: existing?.breakfastBreakEnd ?: "09:30",
+                lunchBreakStart = profileSnap.getString("lunchBreakStart")
+                    ?: existing?.lunchBreakStart ?: "12:30",
+                lunchBreakEnd = profileSnap.getString("lunchBreakEnd")
+                    ?: existing?.lunchBreakEnd ?: "13:00",
                 reminderLeadMinutes = (profileSnap.getLong("reminderLeadMinutes") ?: 5L).toInt(),
                 isOnboardingCompleted = true,
                 updatedAt = System.currentTimeMillis()
@@ -213,8 +247,9 @@ class FirebaseSyncManager(private val context: Context) {
                 defaultClassroom = doc.getString("defaultClassroom") ?: "Room 1",
                 assignedClassrooms = doc.getString("assignedClassrooms") ?: "Room 1",
                 targetPeriodsPerWeek = (doc.getLong("targetPeriodsPerWeek") ?: 4L).toInt(),
-                isSelected = true,
+                isSelected = doc.getBoolean("isSelected") ?: existing?.isSelected ?: true,
                 colorHex = doc.getString("colorHex") ?: existing?.colorHex ?: "#1E3A8A",
+                isArchived = doc.getBoolean("isArchived") ?: existing?.isArchived ?: false,
                 updatedAt = System.currentTimeMillis()
             )
             db.subjectDao().insertOrUpdate(subject)
@@ -277,16 +312,20 @@ class FirebaseSyncManager(private val context: Context) {
      * Uploads all local Room records to user's private Firestore document and subcollections.
      */
     suspend fun syncLocalDataToCloud(): Result<Unit> = withContext(Dispatchers.IO) {
+        uploadMutex.withLock { uploadLocalDataToCloud() }
+    }
+
+    private suspend fun uploadLocalDataToCloud(): Result<Unit> {
         val user = auth.currentUser
         if (user == null) {
             _syncState.value = SyncState.OfflineFallback("Not signed in")
-            return@withContext Result.failure(IllegalStateException("Teacher is not signed in to Google."))
+            return Result.failure(IllegalStateException("Teacher is not signed in to Google."))
         }
 
         val uid = user.uid
         val db = EdenseDatabase.getDatabase(context)
 
-        try {
+        return try {
             _syncState.value = SyncState.Syncing
             val userDoc = firestore.collection("users").document(uid)
 
@@ -294,16 +333,8 @@ class FirebaseSyncManager(private val context: Context) {
             val profile = db.teacherProfileDao().getProfileDirect()
             if (profile != null) {
                 userDoc.set(
-                    mapOf(
-                        "userId" to uid,
-                        "name" to profile.name,
-                        "email" to (user.email ?: profile.email),
-                        "schoolName" to profile.schoolName,
-                        "schoolStartTime" to profile.schoolStartTime,
-                        "schoolEndTime" to profile.schoolEndTime,
-                        "reminderLeadMinutes" to profile.reminderLeadMinutes,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    ),
+                    profile.toFirestoreFields(uid, user.email) +
+                        ("updatedAt" to FieldValue.serverTimestamp()),
                     SetOptions.merge()
                 ).await()
             }
@@ -312,17 +343,8 @@ class FirebaseSyncManager(private val context: Context) {
             val calendar = db.academicCalendarDao().getCalendarDirect()
             if (calendar != null) {
                 userDoc.collection("calendars").document(calendar.id).set(
-                    mapOf(
-                        "userId" to uid,
-                        "academicYear" to calendar.academicYear,
-                        "systemType" to calendar.systemType,
-                        "activeTermName" to calendar.activeTermName,
-                        "termStartDate" to calendar.termStartDate,
-                        "termEndDate" to calendar.termEndDate,
-                        "pauseAlarmsDuringVacation" to calendar.pauseAlarmsDuringVacation,
-                        "isManualVacationMode" to calendar.isManualVacationMode,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    ),
+                    calendar.toFirestoreFields(uid) +
+                        ("updatedAt" to FieldValue.serverTimestamp()),
                     SetOptions.merge()
                 ).await()
             }
@@ -331,15 +353,8 @@ class FirebaseSyncManager(private val context: Context) {
             val terms = db.academicTermDao().getTermsDirect()
             for (term in terms) {
                 userDoc.collection("terms").document(term.id).set(
-                    mapOf(
-                        "id" to term.id,
-                        "userId" to uid,
-                        "name" to term.name,
-                        "startDate" to term.startDate,
-                        "endDate" to term.endDate,
-                        "orderIndex" to term.orderIndex,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    ),
+                    term.toFirestoreFields(uid) +
+                        ("updatedAt" to FieldValue.serverTimestamp()),
                     SetOptions.merge()
                 ).await()
             }
@@ -348,17 +363,8 @@ class FirebaseSyncManager(private val context: Context) {
             val subjects = db.subjectDao().getAllSubjectsDirect()
             for (sub in subjects) {
                 userDoc.collection("subjects").document(sub.id).set(
-                    mapOf(
-                        "userId" to uid,
-                        "name" to sub.name,
-                        "category" to sub.category,
-                        "assignedClasses" to sub.assignedClasses,
-                        "defaultClassroom" to sub.defaultClassroom,
-                        "assignedClassrooms" to sub.assignedClassrooms,
-                        "targetPeriodsPerWeek" to sub.targetPeriodsPerWeek,
-                        "colorHex" to sub.colorHex,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    ),
+                    sub.toFirestoreFields(uid) +
+                        ("updatedAt" to FieldValue.serverTimestamp()),
                     SetOptions.merge()
                 ).await()
             }
@@ -367,17 +373,8 @@ class FirebaseSyncManager(private val context: Context) {
             val periods = db.periodDao().getAllPeriodsDirect()
             for (period in periods) {
                 userDoc.collection("periods").document(period.id).set(
-                    mapOf(
-                        "userId" to uid,
-                        "subjectId" to period.subjectId,
-                        "dayOfWeek" to period.dayOfWeek,
-                        "startTime" to period.startTime,
-                        "endTime" to period.endTime,
-                        "blockId" to period.blockId,
-                        "classroom" to period.classroom,
-                        "className" to period.className,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    ),
+                    period.toFirestoreFields(uid) +
+                        ("updatedAt" to FieldValue.serverTimestamp()),
                     SetOptions.merge()
                 ).await()
             }
@@ -410,5 +407,9 @@ class FirebaseSyncManager(private val context: Context) {
             _syncState.value = SyncState.OfflineFallback("Saved offline: ${e.localizedMessage}")
             Result.failure(e)
         }
+    }
+
+    companion object {
+        private const val AUTO_SYNC_DEBOUNCE_MS = 500L
     }
 }

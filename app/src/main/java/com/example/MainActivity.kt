@@ -32,7 +32,9 @@ import com.example.ui.theme.EdenseTheme
 class MainActivity : ComponentActivity() {
 
     private val database by lazy { EdenseDatabase.getDatabase(this) }
-    private val repository by lazy { EdenseRepository(database, applicationContext) }
+    private val repository by lazy {
+        EdenseRepository(database, applicationContext, syncManager::requestSync)
+    }
     private val authManager by lazy { com.example.data.auth.AuthManager(applicationContext) }
     private val syncManager by lazy { com.example.data.remote.FirebaseSyncManager(applicationContext) }
 

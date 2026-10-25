@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -45,12 +46,6 @@ class SetupViewModel(
 
     val currentUser: StateFlow<FirebaseUser?> = authManager.currentUser
 
-    private val _isSyncing = MutableStateFlow(false)
-    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
-
-    private val _syncMessage = MutableStateFlow<String?>(null)
-    val syncMessage: StateFlow<String?> = _syncMessage.asStateFlow()
-
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -70,61 +65,6 @@ class SetupViewModel(
     fun showSuccess(message: String) {
         _errorMessage.value = null
         _successMessage.value = message
-    }
-
-    fun clearSyncMessage() {
-        _syncMessage.value = null
-    }
-
-    fun syncNow(preserveFeedback: Boolean = false) {
-        viewModelScope.launch {
-            if (!preserveFeedback) {
-                _errorMessage.value = null
-                _successMessage.value = null
-            }
-            if (!syncManager.isOnline) {
-                val msg = "No internet connection detected. Continuing in offline mode."
-                _syncMessage.value = msg
-                if (!preserveFeedback) showSuccess(msg)
-                return@launch
-            }
-            _isSyncing.value = true
-            try {
-                val user = syncManager.currentUser
-                if (user == null) {
-                    _errorMessage.value = "Please connect your Google account to sync with Cloud Firestore."
-                    return@launch
-                }
-                val result = syncManager.performBidirectionalSync(user.uid)
-                result.fold(
-                    onSuccess = {
-                        _syncMessage.value = "Successfully backed up and synced to Cloud Firestore!"
-                        if (!preserveFeedback) showSuccess(_syncMessage.value.orEmpty())
-                    },
-                    onFailure = { error ->
-                        val isPermissionDenied = error.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true ||
-                            (error is com.google.firebase.firestore.FirebaseFirestoreException &&
-                             error.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED)
-                        val message = if (isPermissionDenied) {
-                            "Cloud sync paused: Firestore database rules in Firebase Console (edense-99e8c) need to permit user data writes. All your data is saved safely on this device."
-                        } else {
-                            error.localizedMessage ?: "Unknown sync error"
-                        }
-                        _errorMessage.value = message
-                    }
-                )
-            } catch (error: Exception) {
-                val isPermissionDenied = error.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
-                val message = if (isPermissionDenied) {
-                    "Cloud sync paused: Firestore database rules in Firebase Console (edense-99e8c) need to permit user data writes. All your data is saved safely on this device."
-                } else {
-                    error.localizedMessage ?: "Unknown sync error"
-                }
-                _errorMessage.value = message
-            } finally {
-                _isSyncing.value = false
-            }
-        }
     }
 
     fun onGoogleSignInSuccess() {
@@ -147,32 +87,37 @@ class SetupViewModel(
         val user = authManager.currentUser.value?.takeIf { it.uid == uid } ?: return
         if (!syncManager.isOnline) return
 
-        val syncResult = syncManager.performBidirectionalSync(uid)
-        syncResult.exceptionOrNull()?.let { error ->
-            showError("Cloud sync failed: ${error.localizedMessage ?: "Unknown error"}")
-            return
-        }
-
-        val accountName = user.displayName?.trim()?.takeIf { it.isNotEmpty() }
-        val current = profile.value ?: TeacherProfileEntity()
-        repository.saveTeacherProfile(
-            current.copy(
-                name = accountName ?: current.name,
-                email = user.email ?: current.email,
-                updatedAt = System.currentTimeMillis()
+        try {
+            val accountName = user.displayName?.trim()?.takeIf { it.isNotEmpty() }
+            val current = profile.value ?: TeacherProfileEntity()
+            repository.saveTeacherProfile(
+                current.copy(
+                    name = accountName ?: current.name,
+                    email = user.email ?: current.email,
+                    updatedAt = System.currentTimeMillis()
+                )
             )
-        )
-        val uploadResult = syncManager.syncLocalDataToCloud()
-        uploadResult.exceptionOrNull()?.let { error ->
-            showError("Cloud sync failed: ${error.localizedMessage ?: "Unknown error"}")
-            return
-        }
-        if (accountName != null) {
-            showSuccess("Signed in as $accountName. Data synchronized.")
+            val result = syncManager.performBidirectionalSync(uid)
+            result.exceptionOrNull()?.let { error ->
+                showError("Automatic sync failed: ${error.localizedMessage ?: "Unknown error"}")
+                return
+            }
+            if (accountName != null) showSuccess("Signed in as $accountName.")
+        } catch (error: Exception) {
+            showError("Automatic sync failed: ${error.localizedMessage ?: "Unknown error"}")
         }
     }
 
-    fun saveProfile(name: String, schoolName: String, startTime: String, endTime: String) {
+    fun saveProfile(
+        name: String,
+        schoolName: String,
+        startTime: String,
+        endTime: String,
+        breakfastStart: String,
+        breakfastEnd: String,
+        lunchStart: String,
+        lunchEnd: String
+    ) {
         val current = profile.value ?: TeacherProfileEntity()
         _errorMessage.value = null
         _successMessage.value = null
@@ -181,22 +126,74 @@ class SetupViewModel(
             _errorMessage.value = "School start time ($startTime) must be before closing time ($endTime)."
             return
         }
+        val times = listOf(startTime, endTime, breakfastStart, breakfastEnd, lunchStart, lunchEnd)
+        if (times.any { !it.matches(Regex("(?:[01]\\d|2[0-3]):[0-5]\\d")) }) {
+            _errorMessage.value = "Enter valid school and break times."
+            return
+        }
+        val schoolStartMinutes = com.example.domain.schedule.SchedulingEngine.parseTimeToMinutes(startTime)
+        val schoolEndMinutes = com.example.domain.schedule.SchedulingEngine.parseTimeToMinutes(endTime)
+        val breakfastStartMinutes = com.example.domain.schedule.SchedulingEngine.parseTimeToMinutes(breakfastStart)
+        val breakfastEndMinutes = com.example.domain.schedule.SchedulingEngine.parseTimeToMinutes(breakfastEnd)
+        val lunchStartMinutes = com.example.domain.schedule.SchedulingEngine.parseTimeToMinutes(lunchStart)
+        val lunchEndMinutes = com.example.domain.schedule.SchedulingEngine.parseTimeToMinutes(lunchEnd)
+        if (schoolStartMinutes >= schoolEndMinutes ||
+            breakfastStartMinutes >= breakfastEndMinutes ||
+            lunchStartMinutes >= lunchEndMinutes ||
+            breakfastStartMinutes < schoolStartMinutes ||
+            breakfastEndMinutes > schoolEndMinutes ||
+            lunchStartMinutes < schoolStartMinutes ||
+            lunchEndMinutes > schoolEndMinutes ||
+            breakfastStartMinutes < lunchEndMinutes && lunchStartMinutes < breakfastEndMinutes
+        ) {
+            _errorMessage.value = "Breaks must have a valid duration, fit within school hours, and not overlap."
+            return
+        }
 
         viewModelScope.launch {
             try {
+                val breaksChanged =
+                    breakfastStart != current.breakfastBreakStart ||
+                        breakfastEnd != current.breakfastBreakEnd ||
+                        lunchStart != current.lunchBreakStart ||
+                        lunchEnd != current.lunchBreakEnd
+                if (breaksChanged) {
+                    val breaks = listOf(
+                        breakfastStartMinutes to breakfastEndMinutes,
+                        lunchStartMinutes to lunchEndMinutes
+                    )
+                    val overlappingPeriod = repository.allPeriods.first().firstOrNull { period ->
+                        val periodStart = com.example.domain.schedule.SchedulingEngine
+                            .parseTimeToMinutes(period.startTime)
+                        val periodEnd = com.example.domain.schedule.SchedulingEngine
+                            .parseTimeToMinutes(period.endTime)
+                        breaks.any { (breakStart, breakEnd) ->
+                            periodStart < breakEnd && breakStart < periodEnd
+                        }
+                    }
+                    if (overlappingPeriod != null) {
+                        showError(
+                            "A scheduled class overlaps the new break time " +
+                                "(${overlappingPeriod.startTime}–${overlappingPeriod.endTime}). " +
+                                "Move or remove that class before changing breaks."
+                        )
+                        return@launch
+                    }
+                }
                 repository.saveTeacherProfile(
                     current.copy(
                         name = name.ifBlank { "Teacher" },
                         schoolName = schoolName.ifBlank { "Senior High School" },
-                        schoolStartTime = startTime.ifBlank { "07:00" },
-                        schoolEndTime = endTime.ifBlank { "15:00" },
+                        schoolStartTime = startTime,
+                        schoolEndTime = endTime,
+                        breakfastBreakStart = breakfastStart,
+                        breakfastBreakEnd = breakfastEnd,
+                        lunchBreakStart = lunchStart,
+                        lunchBreakEnd = lunchEnd,
                         updatedAt = System.currentTimeMillis()
                     )
                 )
                 showSuccess("Profile saved successfully.")
-                if (syncManager.isOnline && syncManager.isUserSignedIn) {
-                    syncManager.syncLocalDataToCloud()
-                }
             } catch (error: Exception) {
                 showError("Couldn't save profile: ${error.localizedMessage ?: "Unknown error"}")
             }
@@ -264,10 +261,6 @@ class SetupViewModel(
                 repository.saveAcademicCalendar(updatedCalendar)
                 repository.saveAcademicTerms(termsToSave)
                 showSuccess("Academic calendar saved successfully.")
-
-                if (syncManager.isOnline && syncManager.isUserSignedIn) {
-                    syncManager.syncLocalDataToCloud()
-                }
             } catch (error: Exception) {
                 showError("Couldn't save academic calendar: ${error.localizedMessage ?: "Unknown error"}")
             }

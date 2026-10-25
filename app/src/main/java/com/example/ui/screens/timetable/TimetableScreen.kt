@@ -78,6 +78,7 @@ fun TimetableScreen(
     val quotas by viewModel.subjectQuotas.collectAsStateWithLifecycle()
     val selectedSubjects by viewModel.selectedSubjects.collectAsStateWithLifecycle()
     val conflictWarning by viewModel.conflictWarning.collectAsStateWithLifecycle()
+    val periodSlots by viewModel.periodSlots.collectAsStateWithLifecycle()
 
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -265,6 +266,7 @@ fun TimetableScreen(
         AddPeriodDialog(
             selectedSubjects = selectedSubjects,
             defaultDay = selectedDay,
+            periodSlots = periodSlots,
             onDismiss = { showAddDialog = false },
             onConfirm = { subjectId, day, start, className, classroom, isDouble ->
                 viewModel.addPeriod(subjectId, day, start, className, classroom, isDouble)
@@ -377,6 +379,7 @@ fun TimetableBlockCard(
 fun AddPeriodDialog(
     selectedSubjects: List<com.example.data.local.entity.SubjectEntity>,
     defaultDay: Int,
+    periodSlots: List<com.example.domain.schedule.SchoolPeriodSlot>,
     onDismiss: () -> Unit,
     onConfirm: (subjectId: String, day: Int, start: String, className: String, classroom: String, isDouble: Boolean) -> Unit
 ) {
@@ -397,9 +400,9 @@ fun AddPeriodDialog(
             ClassroomAssignments.roomForClass(className, classes, rooms)
         } ?: "")
     }
-    val selectedSlotIndex = SchedulingEngine.periodSlots.indexOfFirst { it.startTime == startTime }
-    val selectedSlot = SchedulingEngine.periodSlots.getOrNull(selectedSlotIndex)
-    val nextSlot = SchedulingEngine.periodSlots.getOrNull(selectedSlotIndex + 1)
+    val selectedSlotIndex = periodSlots.indexOfFirst { it.startTime == startTime }
+    val selectedSlot = periodSlots.getOrNull(selectedSlotIndex)
+    val nextSlot = periodSlots.getOrNull(selectedSlotIndex + 1)
     val canMakeDouble = selectedSlot != null && nextSlot?.startMinute == selectedSlot.endMinute
     val endTime = if (isDoublePeriod && canMakeDouble) nextSlot!!.endTime else selectedSlot?.endTime.orEmpty()
 
@@ -460,19 +463,19 @@ fun AddPeriodDialog(
                 }
 
                 Text(
-                    text = "One-hour periods (school breaks: 09:00–09:30 and 12:30–13:00)",
+                    text = "One-hour periods are scheduled around your school's configured breaks.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(SchedulingEngine.periodSlots) { slot ->
+                    items(periodSlots) { slot ->
                         FilterChip(
                             selected = startTime == slot.startTime,
                             onClick = {
                                 startTime = slot.startTime
                                 if (isDoublePeriod) {
-                                    val idx = SchedulingEngine.periodSlots.indexOf(slot)
-                                    val next = SchedulingEngine.periodSlots.getOrNull(idx + 1)
+                                    val idx = periodSlots.indexOf(slot)
+                                    val next = periodSlots.getOrNull(idx + 1)
                                     if (next?.startMinute != slot.endMinute) isDoublePeriod = false
                                 }
                             },

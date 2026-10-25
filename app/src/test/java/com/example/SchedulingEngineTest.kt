@@ -97,6 +97,35 @@ class SchedulingEngineTest {
     }
 
     @Test
+    fun schoolPeriodSlots_useConfiguredBreakTimes() {
+        val slots = SchedulingEngine.periodSlots(
+            breakfastBreakStart = "09:15",
+            breakfastBreakEnd = "09:45",
+            lunchBreakStart = "12:15",
+            lunchBreakEnd = "13:00"
+        )
+
+        assertTrue(slots.any { it.startTime == "09:45" })
+        assertTrue(slots.any { it.startTime == "13:00" })
+        assertTrue(slots.none { slot ->
+            val start = SchedulingEngine.parseTimeToMinutes(slot.startTime)
+            val end = SchedulingEngine.parseTimeToMinutes(slot.endTime)
+            start < 9 * 60 + 45 && 9 * 60 + 15 < end ||
+                start < 13 * 60 && 12 * 60 + 15 < end
+        })
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun schoolPeriodSlots_rejectOverlappingBreaks() {
+        SchedulingEngine.periodSlots(
+            breakfastBreakStart = "09:00",
+            breakfastBreakEnd = "10:00",
+            lunchBreakStart = "09:30",
+            lunchBreakEnd = "10:30"
+        )
+    }
+
+    @Test
     fun doublePeriods_countAsTwoPeriodsForWeeklyTargets() {
         assertEquals(1, SchedulingEngine.periodUnitCount("07:00", "08:00"))
         assertEquals(2, SchedulingEngine.periodUnitCount("07:00", "09:00"))

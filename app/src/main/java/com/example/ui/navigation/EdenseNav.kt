@@ -38,7 +38,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudQueue
@@ -50,9 +49,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import com.example.data.remote.SyncState
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -106,7 +103,6 @@ fun EdenseNav(
     val pendingTaskCount = tasksViewModel.allTasks.collectAsStateWithLifecycle().value.count { !it.isCompleted }
     val syncManager = setupViewModel.syncManager
     val syncState by syncManager.syncState.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(syncManager, setupViewModel) {
         combine(
@@ -196,11 +192,6 @@ fun EdenseNav(
                                     else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                                 }
                             )
-                            .clickable {
-                                scope.launch {
-                                    syncManager.syncOnAppLaunch()
-                                }
-                            }
                             .padding(horizontal = 8.dp, vertical = 5.dp)
                             .testTag("sync_status_badge")
                     ) {
@@ -222,13 +213,13 @@ fun EdenseNav(
                             is SyncState.Synced -> {
                                 Icon(
                                     Icons.Default.CloudDone,
-                                    contentDescription = "Synced with Cloud",
+                                    contentDescription = "Data synchronized",
                                     modifier = Modifier.size(15.dp),
                                     tint = MaterialTheme.colorScheme.secondary
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Synced",
+                                    text = "Up to date",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.secondary,
                                     fontWeight = FontWeight.Bold

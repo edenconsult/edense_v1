@@ -21,9 +21,14 @@ import java.util.UUID
 
 class EdenseRepository(
     private val database: EdenseDatabase,
-    private val appContext: Context
+    private val appContext: Context,
+    private val requestAutomaticSync: () -> Unit = {}
 ) {
     suspend fun exportDataAsJson(): String = EdenseDataExporter.export(database)
+
+    private fun requestCloudSync() {
+        requestAutomaticSync()
+    }
 
     val teacherProfile: Flow<TeacherProfileEntity?> =
         database.teacherProfileDao().getProfile()
@@ -77,16 +82,19 @@ class EdenseRepository(
 
     suspend fun saveTeacherProfile(profile: TeacherProfileEntity) {
         database.teacherProfileDao().insertOrUpdate(profile)
+        requestCloudSync()
     }
 
     suspend fun saveAcademicCalendar(calendar: AcademicCalendarEntity) {
         database.academicCalendarDao().insertOrUpdate(calendar)
         rescheduleClassReminders()
+        requestCloudSync()
     }
 
     suspend fun saveAcademicTerms(terms: List<AcademicTermEntity>) {
         database.academicTermDao().replaceAll(terms)
         rescheduleClassReminders()
+        requestCloudSync()
     }
 
     suspend fun rescheduleClassReminders() {
@@ -143,6 +151,7 @@ class EdenseRepository(
             assignedClassrooms = assignedClassrooms,
             targetPeriods = targetPeriodsPerWeek
         )
+        requestCloudSync()
         return true
     }
 
@@ -164,6 +173,7 @@ class EdenseRepository(
                 colorHex = if (category == "CORE") "#1E6F5C" else "#7C3AED"
             )
         )
+        requestCloudSync()
         return true
     }
 
@@ -178,6 +188,7 @@ class EdenseRepository(
         )
         // Also clean up timetable periods for this subject
         database.periodDao().deletePeriodsForSubject(subjectId)
+        requestCloudSync()
     }
 
     suspend fun addPeriod(
@@ -186,13 +197,23 @@ class EdenseRepository(
         startTime: String,
         className: String,
         classroom: String,
-        isDoublePeriod: Boolean
+        isDoublePeriod: Boolean,
+        breakfastBreakStart: String = "09:00",
+        breakfastBreakEnd: String = "09:30",
+        lunchBreakStart: String = "12:30",
+        lunchBreakEnd: String = "13:00"
     ) {
-        val selectedSlot = SchedulingEngine.periodSlots
+        val periodSlots = SchedulingEngine.periodSlots(
+            breakfastBreakStart,
+            breakfastBreakEnd,
+            lunchBreakStart,
+            lunchBreakEnd
+        )
+        val selectedSlot = periodSlots
             .firstOrNull { it.startTime == startTime }
             ?: throw IllegalArgumentException("No school period starts at $startTime")
-        val slotIndex = SchedulingEngine.periodSlots.indexOf(selectedSlot)
-        val secondSlot = SchedulingEngine.periodSlots.getOrNull(slotIndex + 1)
+        val slotIndex = periodSlots.indexOf(selectedSlot)
+        val secondSlot = periodSlots.getOrNull(slotIndex + 1)
         if (isDoublePeriod && (secondSlot == null || secondSlot.startMinute != selectedSlot.endMinute)) {
             throw IllegalArgumentException("A double period must use two consecutive periods without a break")
         }
@@ -227,6 +248,7 @@ class EdenseRepository(
             }
         }
         database.periodDao().insertPeriods(periods)
+        requestCloudSync()
 
         val subject = database.subjectDao().getSubjectByIdDirect(subjectId)
         val profile = database.teacherProfileDao().getProfileDirect()
@@ -253,6 +275,7 @@ class EdenseRepository(
     suspend fun deletePeriod(id: String, blockId: String) {
         database.periodDao().deletePeriod(id)
         AlarmScheduler.cancelAlarm(appContext, blockId)
+        requestCloudSync()
     }
 
     suspend fun logSession(
@@ -300,6 +323,7 @@ class EdenseRepository(
             followUpTask?.let { database.taskDao().insertTask(it) }
         }
         followUpTask?.let { TaskReminderScheduler.schedule(appContext, it) }
+        requestCloudSync()
     }
 
     suspend fun addTask(
@@ -324,6 +348,7 @@ class EdenseRepository(
         TaskReminderScheduler.schedule(appContext, task)
         val subject = database.subjectDao().getSelectedSubjectsDirect().firstOrNull { it.id == subjectId }
         EdenseNotificationManager.notifyTaskChange(appContext, task, TaskChangeType.CREATED, subject?.name)
+        requestCloudSync()
     }
 
     suspend fun updateTask(
@@ -350,6 +375,7 @@ class EdenseRepository(
         val subject = database.subjectDao().getSelectedSubjectsDirect().firstOrNull { it.id == subjectId }
         val changeType = if (isRescheduled) TaskChangeType.RESCHEDULED else TaskChangeType.UPDATED
         EdenseNotificationManager.notifyTaskChange(appContext, updated, changeType, subject?.name)
+        requestCloudSync()
     }
 
     suspend fun toggleTaskCompleted(id: String, isCompleted: Boolean) {
@@ -362,11 +388,13 @@ class EdenseRepository(
         } else {
             TaskReminderScheduler.schedule(appContext, task.copy(isCompleted = false))
         }
+        requestCloudSync()
     }
 
     suspend fun deleteTask(id: String) {
         database.taskDao().deleteTask(id)
         TaskReminderScheduler.cancel(appContext, id)
         EdenseNotificationManager.cancelTaskNotification(appContext, id)
+        requestCloudSync()
     }
 }
