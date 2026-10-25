@@ -17,4 +17,7 @@ interface AcademicCalendarDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(calendar: AcademicCalendarEntity)
+
+    @Query("DELETE FROM academic_calendar")
+    suspend fun deleteAll()
 }

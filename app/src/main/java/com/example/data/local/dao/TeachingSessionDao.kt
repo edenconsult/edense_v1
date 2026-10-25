@@ -32,4 +32,7 @@ interface TeachingSessionDao {
 
     @Query("DELETE FROM teaching_sessions WHERE id = :id")
     suspend fun deleteSession(id: String)
+
+    @Query("DELETE FROM teaching_sessions")
+    suspend fun deleteAll()
 }

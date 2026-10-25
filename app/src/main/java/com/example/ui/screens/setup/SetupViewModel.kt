@@ -70,26 +70,35 @@ class SetupViewModel(
     fun onGoogleSignInSuccess() {
         val user = authManager.currentUser.value ?: return
         viewModelScope.launch {
-            val accountName = user.displayName?.trim()?.takeIf { it.isNotEmpty() }
-            val current = profile.value ?: TeacherProfileEntity()
-            repository.saveTeacherProfile(
-                current.copy(
-                    name = accountName ?: current.name,
-                    email = user.email ?: current.email,
-                    updatedAt = System.currentTimeMillis()
+            try {
+                syncManager.prepareLocalAccount(user.uid)
+                val accountName = user.displayName?.trim()?.takeIf { it.isNotEmpty() }
+                val current = repository.teacherProfile.first() ?: TeacherProfileEntity()
+                repository.saveTeacherProfile(
+                    current.copy(
+                        name = accountName ?: current.name,
+                        email = user.email ?: current.email,
+                        updatedAt = System.currentTimeMillis()
+                    )
                 )
-            )
-            showSuccess("Signed in as ${accountName ?: user.email ?: "your Google account"}.")
+                showSuccess("Signed in as ${accountName ?: user.email ?: "your Google account"}.")
+            } catch (error: Exception) {
+                showError(
+                    "Couldn't isolate local data for this account: " +
+                        (error.localizedMessage ?: "Unknown error")
+                )
+            }
         }
     }
 
     suspend fun syncAuthenticatedUser(uid: String) {
         val user = authManager.currentUser.value?.takeIf { it.uid == uid } ?: return
-        if (!syncManager.isOnline) return
 
         try {
+            syncManager.prepareLocalAccount(uid)
+            if (!syncManager.isOnline) return
             val accountName = user.displayName?.trim()?.takeIf { it.isNotEmpty() }
-            val current = profile.value ?: TeacherProfileEntity()
+            val current = repository.teacherProfile.first() ?: TeacherProfileEntity()
             repository.saveTeacherProfile(
                 current.copy(
                     name = accountName ?: current.name,

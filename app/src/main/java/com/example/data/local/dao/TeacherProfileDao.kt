@@ -17,4 +17,7 @@ interface TeacherProfileDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(profile: TeacherProfileEntity)
+
+    @Query("DELETE FROM teacher_profile")
+    suspend fun deleteAll()
 }

@@ -19,4 +19,7 @@ interface PendingDeletionDao {
             "WHERE collectionPath = :collectionPath AND documentId = :documentId"
     )
     suspend fun remove(collectionPath: String, documentId: String)
+
+    @Query("DELETE FROM pending_sync_deletions")
+    suspend fun deleteAll()
 }

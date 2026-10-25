@@ -82,11 +82,13 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         exactAlarmAccessState.value = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
             (getSystemService(ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                ReminderRescheduler.rescheduleAll(applicationContext)
-            } catch (error: Exception) {
-                android.util.Log.e("MainActivity", "Unable to restore scheduled reminders.", error)
+        if (authManager.currentUser.value == null) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    ReminderRescheduler.rescheduleAll(applicationContext)
+                } catch (error: Exception) {
+                    android.util.Log.e("MainActivity", "Unable to restore scheduled reminders.", error)
+                }
             }
         }
     }

@@ -36,10 +36,14 @@ class FirebaseSyncWorkAndDeletionTest {
 
     @Test
     fun backgroundSyncRequiresInternetAndUsesTheSyncWorker() {
-        val request = FirebaseSyncWorkScheduler.createRequest()
+        val request = FirebaseSyncWorkScheduler.createRequest("teacher-a")
 
         assertEquals(NetworkType.CONNECTED, request.workSpec.constraints.requiredNetworkType)
         assertEquals(FirebaseSyncWorker::class.java.name, request.workSpec.workerClassName)
+        assertEquals(
+            "teacher-a",
+            request.workSpec.input.getString(FirebaseSyncWorkScheduler.ACCOUNT_UID_INPUT_KEY)
+        )
     }
 
     @Test

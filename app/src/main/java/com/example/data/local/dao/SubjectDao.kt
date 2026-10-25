@@ -61,4 +61,7 @@ interface SubjectDao {
         targetPeriods: Int,
         timestamp: Long = System.currentTimeMillis()
     )
+
+    @Query("DELETE FROM subjects")
+    suspend fun deleteAll()
 }

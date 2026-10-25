@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +50,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import com.example.data.remote.SyncState
 import com.example.data.alarm.LessonLogPromptController
 import kotlinx.coroutines.flow.combine
@@ -105,13 +107,33 @@ fun EdenseNav(
     val syncManager = setupViewModel.syncManager
     val syncState by syncManager.syncState.collectAsStateWithLifecycle()
     val lessonPrompt by LessonLogPromptController.pendingPrompt.collectAsStateWithLifecycle()
+    val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(syncManager, setupViewModel) {
+    var preparedAccountUid by remember { mutableStateOf<String?>(null) }
+    var accountPreparationError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(currentUser?.uid) {
+        val uid = currentUser?.uid
+        preparedAccountUid = null
+        accountPreparationError = null
+        if (uid != null) {
+            try {
+                syncManager.prepareLocalAccount(uid)
+                preparedAccountUid = uid
+            } catch (error: Exception) {
+                accountPreparationError =
+                    error.localizedMessage ?: "Could not isolate local account data."
+            }
+        }
+    }
+
+    LaunchedEffect(syncManager, setupViewModel, preparedAccountUid) {
+        val readyUid = preparedAccountUid ?: return@LaunchedEffect
         combine(
             syncManager.networkMonitor.isOnlineFlow,
             setupViewModel.currentUser
         ) { isOnline, user ->
-            user?.uid?.takeIf { isOnline }
+            user?.uid?.takeIf { isOnline && it == readyUid }
         }.distinctUntilChanged().collect { uid ->
             if (uid != null) {
                 setupViewModel.syncAuthenticatedUser(uid)
@@ -124,6 +146,35 @@ fun EdenseNav(
 
     LaunchedEffect(lessonPrompt) {
         if (lessonPrompt != null) currentScreen = NavDestination.HOME.ordinal
+    }
+
+    if (currentUser != null && preparedAccountUid != currentUser?.uid) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (accountPreparationError == null) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.size(12.dp))
+                    Text("Securing this account's local data…")
+                } else {
+                    Text(
+                        text = "Account data could not be isolated: $accountPreparationError",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.size(12.dp))
+                    Button(
+                        onClick = {
+                            setupViewModel.authManager.signOut(coroutineScope) {}
+                        }
+                    ) {
+                        Text("Sign Out")
+                    }
+                }
+            }
+        }
+        return
     }
 
     val isSetupRequired = currentUser == null ||

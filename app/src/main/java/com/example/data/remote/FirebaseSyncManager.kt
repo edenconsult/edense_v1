@@ -3,6 +3,11 @@ package com.example.data.remote
 import android.content.Context
 import android.util.Log
 import com.example.R
+import com.example.data.alarm.AlarmScheduler
+import com.example.data.alarm.LessonLogPromptScheduler
+import com.example.data.alarm.ReminderRescheduler
+import com.example.data.alarm.TaskReminderScheduler
+import com.example.data.local.AccountDataIsolation
 import com.example.data.local.EdenseDatabase
 import com.example.data.local.entity.AcademicCalendarEntity
 import com.example.data.local.entity.AcademicTermEntity
@@ -11,7 +16,6 @@ import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.TaskEntity
 import com.example.data.local.entity.TeacherProfileEntity
 import com.example.data.local.entity.TeachingSessionEntity
-import com.example.data.alarm.ReminderRescheduler
 import com.example.data.network.NetworkMonitor
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -40,7 +44,7 @@ class FirebaseSyncManager(private val context: Context) {
 
     private val auth get() = Firebase.auth
     val networkMonitor by lazy { NetworkMonitor(context) }
-    private val uploadMutex = Mutex()
+    private val accountDataIsolation = AccountDataIsolation(context)
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -64,7 +68,19 @@ class FirebaseSyncManager(private val context: Context) {
         get() = networkMonitor.isOnline
 
     fun requestSync() {
-        FirebaseSyncWorkScheduler.enqueue(context)
+        auth.currentUser?.uid?.let { uid ->
+            FirebaseSyncWorkScheduler.enqueue(context, uid)
+        }
+    }
+
+    suspend fun prepareLocalAccount(uid: String) = withContext(Dispatchers.IO) {
+        accountSyncMutex.withLock {
+            requireCurrentAccount(uid)
+            val database = EdenseDatabase.getDatabase(context)
+            switchLocalAccount(uid, database)
+            requireCurrentAccount(uid)
+            ReminderRescheduler.rescheduleAll(context)
+        }
     }
 
     /**
@@ -101,7 +117,7 @@ class FirebaseSyncManager(private val context: Context) {
      * then pushes local Room records to Firestore to guarantee cloud backup.
      */
     suspend fun performBidirectionalSync(uid: String): Result<Unit> = withContext(Dispatchers.IO) {
-        uploadMutex.withLock {
+        accountSyncMutex.withLock {
             val db = EdenseDatabase.getDatabase(context)
 
             try {
@@ -115,13 +131,17 @@ class FirebaseSyncManager(private val context: Context) {
                     )
                 }
                 _syncState.value = SyncState.Syncing
+                switchLocalAccount(uid, db)
+                requireCurrentAccount(uid)
                 val userDoc = firestore.collection("users").document(uid)
 
                 applyPendingDeletions(userDoc, db)
+                requireCurrentAccount(uid)
                 restoreCloudDataToLocal(uid, userDoc, db)
+                requireCurrentAccount(uid)
                 ReminderRescheduler.rescheduleAll(context)
 
-                val pushResult = uploadLocalDataToCloud()
+                val pushResult = uploadLocalDataToCloud(uid)
                 if (pushResult.isFailure) {
                     val error = pushResult.exceptionOrNull()
                         ?: IllegalStateException("Cloud upload failed")
@@ -292,28 +312,55 @@ class FirebaseSyncManager(private val context: Context) {
     /**
      * Uploads all local Room records to user's private Firestore document and subcollections.
      */
-    suspend fun syncLocalDataToCloud(): Result<Unit> = withContext(Dispatchers.IO) {
-        uploadMutex.withLock { uploadLocalDataToCloud() }
+    suspend fun syncLocalDataToCloud(expectedUid: String): Result<Unit> = withContext(Dispatchers.IO) {
+        accountSyncMutex.withLock {
+            val currentUid = auth.currentUser?.uid
+                ?: return@withLock Result.failure(
+                    IllegalStateException("Teacher is not signed in to Google.")
+                )
+            if (currentUid != expectedUid) {
+                return@withLock Result.failure(
+                    IllegalStateException("The queued sync belongs to a different account.")
+                )
+            }
+            try {
+                val database = EdenseDatabase.getDatabase(context)
+                switchLocalAccount(expectedUid, database)
+                requireCurrentAccount(expectedUid)
+                ReminderRescheduler.rescheduleAll(context)
+                uploadLocalDataToCloud(expectedUid)
+            } catch (error: Exception) {
+                _syncState.value = SyncState.OfflineFallback(
+                    "Sync deferred: ${error.localizedMessage ?: "unknown error"}"
+                )
+                Result.failure(error)
+            }
+        }
     }
 
-    private suspend fun uploadLocalDataToCloud(): Result<Unit> {
+    private suspend fun uploadLocalDataToCloud(uid: String): Result<Unit> {
         val user = auth.currentUser
         if (user == null) {
             _syncState.value = SyncState.OfflineFallback("Not signed in")
             return Result.failure(IllegalStateException("Teacher is not signed in to Google."))
         }
-
-        val uid = user.uid
+        if (user.uid != uid) {
+            return Result.failure(
+                IllegalStateException("The signed-in account changed before upload started.")
+            )
+        }
         val db = EdenseDatabase.getDatabase(context)
 
         return try {
             _syncState.value = SyncState.Syncing
             val userDoc = firestore.collection("users").document(uid)
+            requireCurrentAccount(uid)
             applyPendingDeletions(userDoc, db)
 
             // 1. Sync Profile
             val profile = db.teacherProfileDao().getProfileDirect()
             if (profile != null) {
+                requireCurrentAccount(uid)
                 userDoc.set(
                     profile.toFirestoreFields(uid, user.email) +
                         ("updatedAt" to FieldValue.serverTimestamp()),
@@ -324,6 +371,7 @@ class FirebaseSyncManager(private val context: Context) {
             // 2. Sync Academic Calendar
             val calendar = db.academicCalendarDao().getCalendarDirect()
             if (calendar != null) {
+                requireCurrentAccount(uid)
                 userDoc.collection("calendars").document(calendar.id).set(
                     calendar.toFirestoreFields(uid) +
                         ("updatedAt" to FieldValue.serverTimestamp()),
@@ -334,6 +382,7 @@ class FirebaseSyncManager(private val context: Context) {
             // 2a. Sync all academic terms
             val terms = db.academicTermDao().getTermsDirect()
             for (term in terms) {
+                requireCurrentAccount(uid)
                 userDoc.collection("terms").document(term.id).set(
                     term.toFirestoreFields(uid) +
                         ("updatedAt" to FieldValue.serverTimestamp()),
@@ -344,6 +393,7 @@ class FirebaseSyncManager(private val context: Context) {
             // 3. Sync Selected Subjects
             val subjects = db.subjectDao().getAllSubjectsDirect()
             for (sub in subjects) {
+                requireCurrentAccount(uid)
                 userDoc.collection("subjects").document(sub.id).set(
                     sub.toFirestoreFields(uid) +
                         ("updatedAt" to FieldValue.serverTimestamp()),
@@ -354,6 +404,7 @@ class FirebaseSyncManager(private val context: Context) {
             // 4. Sync Timetable Periods
             val periods = db.periodDao().getAllPeriodsDirect()
             for (period in periods) {
+                requireCurrentAccount(uid)
                 userDoc.collection("periods").document(period.id).set(
                     period.toFirestoreFields(uid) +
                         ("updatedAt" to FieldValue.serverTimestamp()),
@@ -364,6 +415,7 @@ class FirebaseSyncManager(private val context: Context) {
             // 5. Sync all teaching sessions, including class-specific carry-forward data
             val sessions = db.teachingSessionDao().getAllSessionsDirect()
             for (session in sessions) {
+                requireCurrentAccount(uid)
                 userDoc.collection("sessions").document(session.id).set(
                     session.toFirestoreFields(uid) +
                         ("updatedAt" to FieldValue.serverTimestamp()),
@@ -374,6 +426,7 @@ class FirebaseSyncManager(private val context: Context) {
             // 6. Sync all tasks, including completed and class-specific follow-up tasks
             val tasks = db.taskDao().getAllTasksDirect()
             for (task in tasks) {
+                requireCurrentAccount(uid)
                 userDoc.collection("tasks").document(task.id).set(
                     task.toFirestoreFields(uid) +
                         ("updatedAt" to FieldValue.serverTimestamp()),
@@ -396,6 +449,7 @@ class FirebaseSyncManager(private val context: Context) {
         db: EdenseDatabase
     ) {
         PendingDeletionSync(db.pendingDeletionDao()).sync { deletion ->
+            requireCurrentAccount(userDoc.id)
             userDoc.collection(deletion.collectionPath)
                 .document(deletion.documentId)
                 .delete()
@@ -403,4 +457,26 @@ class FirebaseSyncManager(private val context: Context) {
         }
     }
 
+    private suspend fun switchLocalAccount(uid: String, db: EdenseDatabase) {
+        val previousPeriods = db.periodDao().getAllPeriodsDirect()
+        val previousTasks = db.taskDao().getAllTasksDirect()
+        val changed = accountDataIsolation.switchToAccount(uid, db)
+        if (!changed) return
+
+        previousPeriods.map { it.blockId }.distinct().forEach { blockId ->
+            AlarmScheduler.cancelAlarm(context, blockId)
+            LessonLogPromptScheduler.cancel(context, blockId)
+        }
+        previousTasks.forEach { task -> TaskReminderScheduler.cancel(context, task.id) }
+    }
+
+    private fun requireCurrentAccount(expectedUid: String) {
+        if (auth.currentUser?.uid != expectedUid) {
+            throw IllegalStateException("The signed-in account changed during synchronization.")
+        }
+    }
+
+    private companion object {
+        val accountSyncMutex = Mutex()
+    }
 }
