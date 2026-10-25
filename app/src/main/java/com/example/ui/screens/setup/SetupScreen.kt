@@ -1,5 +1,7 @@
 package com.example.ui.screens.setup
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -69,6 +71,10 @@ import com.example.data.local.entity.SubjectEntity
 import com.example.domain.schedule.ClassroomAssignments
 import com.example.ui.theme.EdenseGreen
 import com.example.ui.theme.EdenseNavy
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.IOException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1090,6 +1096,27 @@ fun TeacherProfileTab(
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val syncMessage by viewModel.syncMessage.collectAsStateWithLifecycle()
     var isSigningIn by remember { mutableStateOf(false) }
+    val exportFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            coroutineScope.launch {
+                try {
+                    val export = viewModel.createDataExport()
+                    withContext(Dispatchers.IO) {
+                        val output = context.contentResolver.openOutputStream(uri)
+                            ?: throw IOException("The selected location could not be opened.")
+                        output.use { it.write(export.toByteArray(Charsets.UTF_8)) }
+                    }
+                    viewModel.showSuccess("Your Edense data export was saved.")
+                } catch (error: Exception) {
+                    viewModel.showError(
+                        "Couldn't export your data: ${error.localizedMessage ?: "Unknown error"}"
+                    )
+                }
+            }
+        }
+    }
 
     var name by remember(profile) { mutableStateOf(profile?.name ?: "Mr. K. Mensah") }
     var schoolName by remember(profile) { mutableStateOf(profile?.schoolName ?: "Achimota Senior High School") }
@@ -1163,6 +1190,38 @@ fun TeacherProfileTab(
                 Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Save Profile")
+            }
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().testTag("data_export_card")
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Back up or export your data",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Your data stays in private app storage. Android device backup can include the Edense database when backup is enabled. Export a JSON copy to a location you trust; it contains your profile, timetable, teaching notes, and tasks.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            exportFileLauncher.launch("edense-data-export.json")
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("export_data_button")
+                    ) {
+                        Text("Export Data as JSON")
+                    }
+                }
             }
         }
 

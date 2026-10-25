@@ -285,6 +285,8 @@ class SetupViewModel(
             repository.saveTeacherProfile(current.copy(isOnboardingCompleted = true))
         }
     }
+
+    suspend fun createDataExport(): String = repository.exportDataAsJson()
 }
 
 class SetupViewModelFactory(

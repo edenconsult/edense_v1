@@ -63,13 +63,6 @@ import com.example.domain.schedule.DayScheduleStatus
 import com.example.domain.home.timeOfDayGreeting
 import com.example.domain.task.TaskType
 import com.example.domain.task.taskUrgency
-import com.example.ui.theme.EdenseAmber
-import com.example.ui.theme.EdenseAmberContainer
-import com.example.ui.theme.EdenseGreen
-import com.example.ui.theme.EdenseGreenContainer
-import com.example.ui.theme.EdenseNavy
-import com.example.ui.theme.EdenseSky
-import com.example.ui.theme.EdenseSkyContainer
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -119,7 +112,7 @@ fun HomeScreen(
                                 text = "${timeOfDayGreeting(currentTime)}, ${profile?.name ?: "Teacher"}",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = EdenseNavy
+                                color = MaterialTheme.colorScheme.primary
                             )
                             Text(
                                 text = profile?.schoolName ?: "Senior High School",
@@ -129,14 +122,14 @@ fun HomeScreen(
                         }
                         Box(
                             modifier = Modifier
-                                .background(EdenseNavy, RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
                                 text = currentTime,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                     }
@@ -144,7 +137,7 @@ fun HomeScreen(
                     Text(
                         text = "$dateDisplay • ${calendar?.activeTermName ?: "Semester 1"}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = EdenseGreen,
+                        color = MaterialTheme.colorScheme.secondary,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -248,7 +241,7 @@ fun HomeScreen(
                         loggingBlock = null
                         showLogSheet = true
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = EdenseNavy),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f).testTag("quick_log_session_button")
                 ) {
@@ -275,7 +268,7 @@ fun HomeScreen(
                     text = "Upcoming Deadlines & Tasks",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = EdenseNavy
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
             items(pendingTasks.take(3).size) { index ->
@@ -360,7 +353,7 @@ fun NowClassCard(
     onLogSession: () -> Unit
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = EdenseNavy),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         modifier = Modifier.fillMaxWidth().testTag("now_class_card")
@@ -373,12 +366,12 @@ fun NowClassCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .background(EdenseGreen, RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(6.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = "● CURRENT CLASS NOW",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold
                     )
@@ -386,12 +379,12 @@ fun NowClassCard(
                 if (block.isDoublePeriod) {
                     Box(
                         modifier = Modifier
-                            .background(EdenseAmber, RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(6.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = "Double Period",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold
                         )
@@ -405,12 +398,12 @@ fun NowClassCard(
                 text = block.subjectName,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onPrimaryContainer
             )
             Text(
                 text = "${block.className} • ${block.classroom}",
                 style = MaterialTheme.typography.titleMedium,
-                color = Color.White.copy(alpha = 0.85f)
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
             )
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -424,7 +417,7 @@ fun NowClassCard(
                     Icon(
                         Icons.Default.AccessTime,
                         contentDescription = null,
-                        tint = EdenseAmber,
+                        tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
@@ -432,13 +425,16 @@ fun NowClassCard(
                         text = "${block.startTime} – ${block.endTime} (${countdownText ?: ""})",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
 
                 Button(
                     onClick = onLogSession,
-                    colors = ButtonDefaults.buttonColors(containerColor = EdenseGreen),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary
+                    ),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.testTag("log_now_button")
                 ) {
@@ -470,19 +466,19 @@ fun NextClassCard(
                     text = "UPCOMING NEXT",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = EdenseGreen
+                    color = MaterialTheme.colorScheme.secondary
                 )
                 if (countdownText != null) {
                     Box(
                         modifier = Modifier
-                            .background(EdenseAmberContainer, RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(6.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = countdownText,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = EdenseAmber
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
                     }
                 }
@@ -494,7 +490,7 @@ fun NextClassCard(
                 text = block.subjectName,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = EdenseNavy
+                color = MaterialTheme.colorScheme.primary
             )
             Text(
                 text = "${block.className} • ${block.classroom} • Starts at ${block.startTime}",
@@ -511,7 +507,7 @@ fun VacationBanner(
     onReviewLogs: () -> Unit
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = EdenseSkyContainer),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth().testTag("vacation_banner")
     ) {
@@ -520,7 +516,7 @@ fun VacationBanner(
                 Icon(
                     Icons.Default.NotificationsOff,
                     contentDescription = null,
-                    tint = EdenseSky,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
@@ -528,7 +524,7 @@ fun VacationBanner(
                     text = "School Vacation / Recess",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = EdenseSky
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -543,13 +539,16 @@ fun VacationBanner(
                     text = "Classes resume: ${status.resumesDate}",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = EdenseSky
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
             Spacer(modifier = Modifier.height(14.dp))
             Button(
                 onClick = onReviewLogs,
-                colors = ButtonDefaults.buttonColors(containerColor = EdenseSky),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary
+                ),
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Text("Review Teaching Notes")
@@ -572,7 +571,7 @@ fun AllClassesCompleteCard(message: String) {
             Icon(
                 Icons.Default.CheckCircle,
                 contentDescription = null,
-                tint = EdenseGreen,
+                tint = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.size(28.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -607,7 +606,7 @@ fun EmptyTimetableCard(
                 text = "Welcome to Edense!",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = EdenseNavy
+                color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
@@ -622,7 +621,7 @@ fun EmptyTimetableCard(
             Spacer(modifier = Modifier.height(14.dp))
             Button(
                 onClick = onSetupTimetable,
-                colors = ButtonDefaults.buttonColors(containerColor = EdenseNavy),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Text("Build Weekly Timetable")
@@ -700,7 +699,7 @@ fun SessionLogBottomSheetContent(
             text = "Log Teaching Session",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            color = EdenseNavy
+            color = MaterialTheme.colorScheme.primary
         )
 
         // Subject selector
@@ -844,7 +843,7 @@ fun SessionLogBottomSheetContent(
                     }
                 },
                 enabled = selectedSubjectId.isNotBlank() && lastTopic.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = EdenseNavy),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 modifier = Modifier.testTag("save_session_button")
             ) {
                 Text("Save Session")

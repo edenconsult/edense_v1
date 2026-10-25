@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.data.local.EdenseDatabase
@@ -65,7 +66,7 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
                     return@launch
                 }
 
-                showNotification(context, title, message, notificationId)
+                showNotification(context, title, message, notificationId, isClassReminder)
             } finally {
                 pendingResult.finish()
             }
@@ -76,7 +77,8 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
         context: Context,
         title: String,
         message: String,
-        notificationId: Int
+        notificationId: Int,
+        isClassReminder: Boolean
     ) {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -108,10 +110,15 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
             .setContentIntent(pendingIntent)
             .build()
 
-        notificationManager.notify(notificationId, notification)
+        try {
+            notificationManager.notify(notificationId, notification)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Notification permission is unavailable; reminder was not shown", e)
+        }
     }
 
     companion object {
+        private const val TAG = "EdenseAlarmReceiver"
         const val EXTRA_TITLE = "extra_title"
         const val EXTRA_MESSAGE = "extra_message"
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"

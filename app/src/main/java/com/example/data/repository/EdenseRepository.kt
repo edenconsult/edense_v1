@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.withTransaction
 import com.example.data.alarm.AlarmScheduler
 import com.example.data.alarm.TaskReminderScheduler
+import com.example.data.export.EdenseDataExporter
 import com.example.data.local.EdenseDatabase
 import com.example.data.local.entity.AcademicCalendarEntity
 import com.example.data.local.entity.AcademicTermEntity
@@ -22,6 +23,8 @@ class EdenseRepository(
     private val database: EdenseDatabase,
     private val appContext: Context
 ) {
+    suspend fun exportDataAsJson(): String = EdenseDataExporter.export(database)
+
     val teacherProfile: Flow<TeacherProfileEntity?> =
         database.teacherProfileDao().getProfile()
 

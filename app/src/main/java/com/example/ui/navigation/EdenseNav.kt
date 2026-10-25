@@ -73,9 +73,6 @@ import com.example.ui.screens.tasks.TasksScreen
 import com.example.ui.screens.tasks.TasksViewModel
 import com.example.ui.screens.timetable.TimetableScreen
 import com.example.ui.screens.timetable.TimetableViewModel
-import com.example.ui.theme.EdenseAmber
-import com.example.ui.theme.EdenseGreen
-import com.example.ui.theme.EdenseNavy
 
 enum class NavDestination(
     val title: String,
@@ -102,6 +99,7 @@ fun EdenseNav(
     val profile by setupViewModel.profile.collectAsStateWithLifecycle()
     val calendar by setupViewModel.calendar.collectAsStateWithLifecycle()
     val selectedCount by setupViewModel.selectedCount.collectAsStateWithLifecycle()
+    val pendingTaskCount = tasksViewModel.allTasks.collectAsStateWithLifecycle().value.count { !it.isCompleted }
     val syncManager = setupViewModel.syncManager
     val syncState by syncManager.syncState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -153,12 +151,12 @@ fun EdenseNav(
                             modifier = Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .background(EdenseNavy),
+                                .background(MaterialTheme.colorScheme.primary),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = "E",
-                                color = EdenseAmber,
+                                color = MaterialTheme.colorScheme.tertiary,
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.titleMedium
                             )
@@ -169,12 +167,12 @@ fun EdenseNav(
                                 text = "Edense",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = EdenseNavy
+                                color = MaterialTheme.colorScheme.primary
                             )
                             Text(
                                 text = "${calendar?.activeTermName ?: "Semester 1"} • ${calendar?.academicYear ?: "2026/27"}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = EdenseGreen,
+                                color = MaterialTheme.colorScheme.secondary,
                                 fontWeight = FontWeight.Medium
                             )
                         }
@@ -189,8 +187,8 @@ fun EdenseNav(
                             .clip(RoundedCornerShape(12.dp))
                             .background(
                                 when (syncState) {
-                                    is SyncState.Syncing, is SyncState.Checking -> EdenseAmber.copy(alpha = 0.15f)
-                                    is SyncState.Synced -> EdenseGreen.copy(alpha = 0.15f)
+                                    is SyncState.Syncing, is SyncState.Checking -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
+                                    is SyncState.Synced -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
                                     else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                                 }
                             )
@@ -207,13 +205,13 @@ fun EdenseNav(
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(12.dp),
                                     strokeWidth = 2.dp,
-                                    color = EdenseAmber
+                                    color = MaterialTheme.colorScheme.tertiary
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Syncing",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = EdenseAmber,
+                                    color = MaterialTheme.colorScheme.tertiary,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -222,13 +220,13 @@ fun EdenseNav(
                                     Icons.Default.CloudDone,
                                     contentDescription = "Synced with Cloud",
                                     modifier = Modifier.size(15.dp),
-                                    tint = EdenseGreen
+                                    tint = MaterialTheme.colorScheme.secondary
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "Synced",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = EdenseGreen,
+                                    color = MaterialTheme.colorScheme.secondary,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -253,13 +251,13 @@ fun EdenseNav(
                                     if (online) Icons.Default.CloudQueue else Icons.Default.CloudOff,
                                     contentDescription = if (online) "Online" else "Offline",
                                     modifier = Modifier.size(15.dp),
-                                    tint = if (online) EdenseNavy else MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = if (online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = if (online) "Online" else "Offline",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (online) EdenseNavy else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = if (online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -273,7 +271,7 @@ fun EdenseNav(
                         Icon(
                             Icons.Default.Settings,
                             contentDescription = "School & Subject Settings",
-                            tint = EdenseNavy
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 },
@@ -295,16 +293,31 @@ fun EdenseNav(
                         selected = selected,
                         onClick = { currentScreen = destination.ordinal },
                         icon = {
-                            Icon(
-                                imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
-                                contentDescription = destination.title
-                            )
+                            if (destination == NavDestination.TASKS && pendingTaskCount > 0) {
+                                BadgedBox(
+                                    badge = {
+                                        Badge {
+                                            Text(pendingTaskCount.coerceAtMost(99).toString())
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
+                                        contentDescription = destination.title
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
+                                    contentDescription = destination.title
+                                )
+                            }
                         },
                         label = { Text(destination.title) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = EdenseNavy,
-                            selectedTextColor = EdenseNavy,
-                            indicatorColor = EdenseGreen.copy(alpha = 0.2f),
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                             unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ),
