@@ -94,7 +94,6 @@ fun SetupScreen(
     val successMessage by viewModel.successMessage.collectAsStateWithLifecycle()
 
     var activeTab by remember { mutableIntStateOf(0) }
-    var signInPromptResolved by remember { mutableStateOf(viewModel.currentUser.value != null) }
     var isSigningIn by remember { mutableStateOf(false) }
     var configuringSubject by remember { mutableStateOf<SubjectEntity?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -124,7 +123,7 @@ fun SetupScreen(
                     }
                 },
                 actions = {
-                    if (selectedCount > 0 && (signInPromptResolved || currentUser != null)) {
+                    if (selectedCount > 0 && currentUser != null) {
                         Button(
                             onClick = {
                                 viewModel.completeOnboarding()
@@ -165,10 +164,9 @@ fun SetupScreen(
                 )
             }
 
-            if (!signInPromptResolved && currentUser == null) {
+            if (currentUser == null) {
                 SetupSignInPrompt(
                     isSigningIn = isSigningIn,
-                    onContinueOffline = { signInPromptResolved = true },
                     onSignIn = {
                         val activity = context as? android.app.Activity
                         if (activity == null) {
@@ -186,7 +184,7 @@ fun SetupScreen(
                                     viewModel.showSuccess(
                                         "Signed in as ${email ?: "your Google account"}."
                                     )
-                                    viewModel.syncNow(preserveFeedback = true)
+                                    viewModel.onGoogleSignInSuccess()
                                 },
                                 onError = { error ->
                                     isSigningIn = false
@@ -438,8 +436,7 @@ private fun SetupFeedbackBanner(
 @Composable
 private fun SetupSignInPrompt(
     isSigningIn: Boolean,
-    onSignIn: () -> Unit,
-    onContinueOffline: () -> Unit
+    onSignIn: () -> Unit
 ) {
     Box(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -468,7 +465,7 @@ private fun SetupSignInPrompt(
                     color = EdenseNavy
                 )
                 Text(
-                    text = "Sign in before setup to back up your timetable, lesson notes, and tasks. You can also continue offline and connect an account later.",
+                    text = "Sign in with Google to access your school setup and keep your data backed up and synchronized when internet is available.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -488,12 +485,6 @@ private fun SetupSignInPrompt(
                     } else {
                         Text("Sign in with Google")
                     }
-                }
-                TextButton(
-                    onClick = onContinueOffline,
-                    modifier = Modifier.testTag("continue_setup_offline_button")
-                ) {
-                    Text("Continue offline")
                 }
             }
         }

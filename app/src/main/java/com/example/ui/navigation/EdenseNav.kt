@@ -46,12 +46,15 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.data.remote.SyncState
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -99,21 +102,21 @@ fun EdenseNav(
     val profile by setupViewModel.profile.collectAsStateWithLifecycle()
     val calendar by setupViewModel.calendar.collectAsStateWithLifecycle()
     val selectedCount by setupViewModel.selectedCount.collectAsStateWithLifecycle()
+    val currentUser by setupViewModel.currentUser.collectAsStateWithLifecycle()
     val pendingTaskCount = tasksViewModel.allTasks.collectAsStateWithLifecycle().value.count { !it.isCompleted }
     val syncManager = setupViewModel.syncManager
     val syncState by syncManager.syncState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
-    // 1. Open the app -> check internet connection -> sync if available, else fall back to offline
-    LaunchedEffect(Unit) {
-        syncManager.syncOnAppLaunch()
-    }
-
-    // 2. React to network changes when connectivity returns
-    LaunchedEffect(Unit) {
-        syncManager.networkMonitor.isOnlineFlow.collect { isOnline ->
-            if (isOnline && syncManager.isUserSignedIn) {
-                syncManager.syncOnAppLaunch()
+    LaunchedEffect(syncManager, setupViewModel) {
+        combine(
+            syncManager.networkMonitor.isOnlineFlow,
+            setupViewModel.currentUser
+        ) { isOnline, user ->
+            user?.uid?.takeIf { isOnline }
+        }.distinctUntilChanged().collect { uid ->
+            if (uid != null) {
+                setupViewModel.syncAuthenticatedUser(uid)
             }
         }
     }
@@ -121,8 +124,9 @@ fun EdenseNav(
     var currentScreen by rememberSaveable { mutableIntStateOf(NavDestination.HOME.ordinal) }
     var inSetupScreen by rememberSaveable { mutableStateOf(false) }
 
-    // If onboarding is not completed or 0 subjects selected, gate to setup
-    val isSetupRequired = profile?.isOnboardingCompleted != true || selectedCount == 0
+    val isSetupRequired = currentUser == null ||
+        profile?.isOnboardingCompleted != true ||
+        selectedCount == 0
 
     if (isSetupRequired || inSetupScreen) {
         BackHandler(enabled = !isSetupRequired && inSetupScreen) {

@@ -106,26 +106,35 @@ class FirebaseSyncManager(private val context: Context) {
             val userDoc = firestore.collection("users").document(uid)
 
             // Step A: Pull remote data if local is fresh or remote has updates
+            var restoreFailure: Exception? = null
             try {
                 restoreCloudDataToLocal(uid, userDoc, db)
             } catch (e: Exception) {
                 Log.w("FirebaseSync", "Remote restore step deferred: ${e.message}", e)
+                restoreFailure = e
             }
 
             // Step B: Push local data to Cloud
             val pushResult = syncLocalDataToCloud()
-            if (pushResult.isSuccess) {
-                _syncState.value = SyncState.Synced("Cloud synchronized")
-            } else {
-                val ex = pushResult.exceptionOrNull()
-                val isPermissionDenied = ex?.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
-                if (isPermissionDenied) {
-                    _syncState.value = SyncState.OfflineFallback("Firestore rules pending in console. Saved locally.")
+            if (pushResult.isFailure) {
+                val error = pushResult.exceptionOrNull() ?: IllegalStateException("Cloud upload failed")
+                val isPermissionDenied = error.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
+                _syncState.value = if (isPermissionDenied) {
+                    SyncState.OfflineFallback("Firestore rules pending in console. Saved locally.")
                 } else {
-                    _syncState.value = SyncState.OfflineFallback("Sync deferred: ${ex?.localizedMessage ?: "saved locally"}")
+                    SyncState.OfflineFallback("Sync deferred: ${error.localizedMessage ?: "saved locally"}")
                 }
+                return@withContext Result.failure(error)
             }
 
+            if (restoreFailure != null) {
+                _syncState.value = SyncState.OfflineFallback(
+                    "Local data uploaded, but cloud restore failed: ${restoreFailure.localizedMessage ?: "unknown error"}"
+                )
+                return@withContext Result.failure(restoreFailure)
+            }
+
+            _syncState.value = SyncState.Synced("Cloud synchronized")
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e("FirebaseSync", "Bidirectional sync failed, continuing offline", e)
@@ -336,7 +345,7 @@ class FirebaseSyncManager(private val context: Context) {
             }
 
             // 3. Sync Selected Subjects
-            val subjects = db.subjectDao().getSelectedSubjectsDirect()
+            val subjects = db.subjectDao().getAllSubjectsDirect()
             for (sub in subjects) {
                 userDoc.collection("subjects").document(sub.id).set(
                     mapOf(

@@ -127,6 +127,51 @@ class SetupViewModel(
         }
     }
 
+    fun onGoogleSignInSuccess() {
+        val user = authManager.currentUser.value ?: return
+        viewModelScope.launch {
+            val accountName = user.displayName?.trim()?.takeIf { it.isNotEmpty() }
+            val current = profile.value ?: TeacherProfileEntity()
+            repository.saveTeacherProfile(
+                current.copy(
+                    name = accountName ?: current.name,
+                    email = user.email ?: current.email,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+            showSuccess("Signed in as ${accountName ?: user.email ?: "your Google account"}.")
+        }
+    }
+
+    suspend fun syncAuthenticatedUser(uid: String) {
+        val user = authManager.currentUser.value?.takeIf { it.uid == uid } ?: return
+        if (!syncManager.isOnline) return
+
+        val syncResult = syncManager.performBidirectionalSync(uid)
+        syncResult.exceptionOrNull()?.let { error ->
+            showError("Cloud sync failed: ${error.localizedMessage ?: "Unknown error"}")
+            return
+        }
+
+        val accountName = user.displayName?.trim()?.takeIf { it.isNotEmpty() }
+        val current = profile.value ?: TeacherProfileEntity()
+        repository.saveTeacherProfile(
+            current.copy(
+                name = accountName ?: current.name,
+                email = user.email ?: current.email,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+        val uploadResult = syncManager.syncLocalDataToCloud()
+        uploadResult.exceptionOrNull()?.let { error ->
+            showError("Cloud sync failed: ${error.localizedMessage ?: "Unknown error"}")
+            return
+        }
+        if (accountName != null) {
+            showSuccess("Signed in as $accountName. Data synchronized.")
+        }
+    }
+
     fun saveProfile(name: String, schoolName: String, startTime: String, endTime: String) {
         val current = profile.value ?: TeacherProfileEntity()
         _errorMessage.value = null
