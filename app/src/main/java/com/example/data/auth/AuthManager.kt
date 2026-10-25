@@ -8,7 +8,6 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
-import com.example.R
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
@@ -45,15 +44,19 @@ class AuthManager(private val context: Context) {
         onError: (String) -> Unit,
         onCancelled: () -> Unit = {}
     ) {
-        val clientId = try {
-            context.getString(R.string.default_web_client_id)
-        } catch (e: android.content.res.Resources.NotFoundException) {
+        val clientIdResource = context.resources.getIdentifier(
+            "default_web_client_id",
+            "string",
+            context.packageName
+        )
+        if (clientIdResource == 0) {
             onError(
                 "Google Sign-In is not configured. Download google-services.json with a Web OAuth " +
                     "client for this Android app from Firebase."
             )
             return
         }
+        val clientId = context.getString(clientIdResource)
         if (clientId.isBlank()) {
             onError(
                 "Google Sign-In is not configured. Set GOOGLE_WEB_CLIENT_ID to the Web client ID " +

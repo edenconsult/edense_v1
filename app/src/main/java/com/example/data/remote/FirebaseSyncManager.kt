@@ -52,19 +52,12 @@ class FirebaseSyncManager(private val context: Context) {
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
     private val firestore: FirebaseFirestore by lazy {
-        val dbId = try {
-            context.getString(R.string.firestore_database_id)
-        } catch (e: Exception) {
-            ""
-        }
-        if (dbId.isBlank() || dbId == "(default)" || dbId.startsWith("ai-studio-android-")) {
+        val dbId = context.getString(R.string.firestore_database_id).trim()
+        require(dbId.isNotEmpty()) { "Firestore database ID is not configured." }
+        if (dbId == "(default)") {
             FirebaseFirestore.getInstance()
         } else {
-            try {
-                FirebaseFirestore.getInstance(dbId)
-            } catch (e: Exception) {
-                FirebaseFirestore.getInstance()
-            }
+            FirebaseFirestore.getInstance(dbId)
         }
     }
 
