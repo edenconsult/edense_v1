@@ -297,6 +297,8 @@ class FirebaseSyncManager(private val context: Context) {
                 reminderTime = doc.getString("reminderTime") ?: "06:00",
                 isCompleted = doc.getBoolean("isCompleted") ?: false,
                 notes = doc.getString("notes") ?: "",
+                periodBlockId = doc.getString("periodBlockId") ?: "",
+                periodReminderTiming = doc.getString("periodReminderTiming") ?: "BEFORE_START",
                 createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
             )
             db.taskDao().insertTask(task)

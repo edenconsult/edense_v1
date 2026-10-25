@@ -29,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.data.alarm.ReminderRescheduler
+import com.example.data.alarm.LessonLogPrompt
+import com.example.data.alarm.LessonLogPromptController
+import com.example.data.alarm.EdenseAlarmReceiver
 import com.example.data.local.EdenseDatabase
 import com.example.data.repository.EdenseRepository
 import com.example.ui.navigation.EdenseNav
@@ -47,6 +50,16 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private val exactAlarmAccessState = mutableStateOf(false)
+
+    override fun onStart() {
+        super.onStart()
+        isInForeground = true
+    }
+
+    override fun onStop() {
+        isInForeground = false
+        super.onStop()
+    }
 
     private val database by lazy { EdenseDatabase.getDatabase(this) }
     private val repository by lazy {
@@ -80,6 +93,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleLessonPromptIntent(intent)
         enableEdgeToEdge()
         exactAlarmAccessState.value = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
             (getSystemService(ALARM_SERVICE) as AlarmManager).canScheduleExactAlarms()
@@ -102,6 +116,7 @@ class MainActivity : ComponentActivity() {
                             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                     }
+
                 }
 
                 Surface(
@@ -154,5 +169,30 @@ class MainActivity : ComponentActivity() {
 
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLessonPromptIntent(intent)
+    }
+
+    private fun handleLessonPromptIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EdenseAlarmReceiver.EXTRA_PROMPT_LOG, false) != true) return
+        val blockId = intent.getStringExtra(EdenseAlarmReceiver.EXTRA_BLOCK_ID) ?: return
+        LessonLogPromptController.request(
+            LessonLogPrompt(
+                blockId = blockId,
+                subjectId = intent.getStringExtra(EdenseAlarmReceiver.EXTRA_SUBJECT_ID).orEmpty(),
+                className = intent.getStringExtra(EdenseAlarmReceiver.EXTRA_CLASS_NAME).orEmpty(),
+                sessionDate = intent.getStringExtra(EdenseAlarmReceiver.EXTRA_SESSION_DATE).orEmpty()
+            )
+        )
+    }
+
+    companion object {
+        @Volatile
+        var isInForeground: Boolean = false
+            private set
     }
 }

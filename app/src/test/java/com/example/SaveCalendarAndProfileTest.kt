@@ -8,8 +8,12 @@ import com.example.data.local.entity.AcademicCalendarEntity
 import com.example.data.local.entity.AcademicTermEntity
 import com.example.data.local.entity.TeacherProfileEntity
 import com.example.data.local.entity.SubjectEntity
+import com.example.data.local.entity.PeriodEntity
 import com.example.data.repository.EdenseRepository
 import kotlinx.coroutines.runBlocking
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -116,16 +120,42 @@ class SaveCalendarAndProfileTest {
             defaultClassroom = "Room 1"
         )
         database.subjectDao().insertOrUpdate(subject)
+        val previousLessonDate = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, -1)
+            while (get(Calendar.DAY_OF_WEEK) in listOf(Calendar.SATURDAY, Calendar.SUNDAY)) {
+                add(Calendar.DAY_OF_YEAR, -1)
+            }
+        }
+        val lessonDate = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(previousLessonDate.time)
+        val lessonDayOfWeek = when (previousLessonDate.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> 1
+            Calendar.TUESDAY -> 2
+            Calendar.WEDNESDAY -> 3
+            Calendar.THURSDAY -> 4
+            else -> 5
+        }
+        database.periodDao().insertPeriod(
+            PeriodEntity(
+                id = "period",
+                subjectId = subject.id,
+                dayOfWeek = lessonDayOfWeek,
+                startTime = "00:00",
+                endTime = "00:01",
+                blockId = "lesson-block",
+                className = "3A"
+            )
+        )
 
         repository.logSession(
             subjectId = subject.id,
             className = "3A",
-            sessionDate = "2026-10-25",
+            sessionDate = lessonDate,
             lastTopicCovered = "Algebra",
             nextTopicPlanned = "Geometry",
             status = "COMPLETED",
             createFollowUpTask = true,
-            followUpDueDate = "2099-01-05"
+            followUpDueDate = "2099-01-05",
+            periodBlockId = "lesson-block"
         )
         assertEquals(1, automaticSyncRequests)
         assertEquals(1, database.teachingSessionDao().getAllSessionsDirect().size)

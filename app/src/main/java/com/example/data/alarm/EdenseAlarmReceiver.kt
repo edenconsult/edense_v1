@@ -35,6 +35,47 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
                 val calendar = db.academicCalendarDao().getCalendarDirect()
                 val terms = db.academicTermDao().getTermsDirect()
                 val todayDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                val isLogPrompt = intent.getBooleanExtra(EXTRA_PROMPT_LOG, false)
+
+                if (isLogPrompt) {
+                    val blockId = intent.getStringExtra(EXTRA_BLOCK_ID)
+                    val periods = db.periodDao().getAllPeriodsDirect()
+                        .filter { it.blockId == blockId }
+                    if (periods.isNotEmpty()) {
+                        LessonLogPromptScheduler.schedule(
+                            context,
+                            periods,
+                            intent.getStringExtra(EXTRA_SUBJECT_NAME) ?: "Class",
+                            calendar,
+                            terms
+                        )
+                    }
+                    if (calendar != null && (calendar.isManualVacationMode ||
+                            (calendar.pauseAlarmsDuringVacation &&
+                                calendar.isVacation(todayDate, terms)))
+                    ) {
+                        return@launch
+                    }
+                    val prompt = LessonLogPrompt(
+                        blockId = blockId ?: return@launch,
+                        subjectId = intent.getStringExtra(EXTRA_SUBJECT_ID) ?: "",
+                        className = intent.getStringExtra(EXTRA_CLASS_NAME) ?: "",
+                        sessionDate = intent.getStringExtra(EXTRA_SESSION_DATE) ?: todayDate
+                    )
+                    if (MainActivity.isInForeground) {
+                        LessonLogPromptController.request(prompt)
+                    } else {
+                        showNotification(
+                            context,
+                            title,
+                            message,
+                            notificationId,
+                            isClassReminder = true,
+                            lessonPrompt = prompt
+                        )
+                    }
+                    return@launch
+                }
 
                 if (isClassReminder) {
                     val blockId = intent.getStringExtra(EXTRA_BLOCK_ID)
@@ -67,6 +108,8 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
                 }
 
                 showNotification(context, title, message, notificationId, isClassReminder)
+            } catch (error: Exception) {
+                Log.e(TAG, "Unable to deliver scheduled reminder.", error)
             } finally {
                 pendingResult.finish()
             }
@@ -78,7 +121,8 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
         title: String,
         message: String,
         notificationId: Int,
-        isClassReminder: Boolean
+        isClassReminder: Boolean,
+        lessonPrompt: LessonLogPrompt? = null
     ) {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -92,6 +136,13 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
 
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            lessonPrompt?.let {
+                putExtra(EXTRA_PROMPT_LOG, true)
+                putExtra(EXTRA_BLOCK_ID, it.blockId)
+                putExtra(EXTRA_SUBJECT_ID, it.subjectId)
+                putExtra(EXTRA_CLASS_NAME, it.className)
+                putExtra(EXTRA_SESSION_DATE, it.sessionDate)
+            }
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
@@ -130,5 +181,9 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_SUBJECT_NAME = "extra_subject_name"
         const val EXTRA_CLASS_NAME = "extra_class_name"
         const val EXTRA_CLASSROOM = "extra_classroom"
+        const val EXTRA_PROMPT_LOG = "extra_prompt_log"
+        const val EXTRA_SUBJECT_ID = "extra_subject_id"
+        const val EXTRA_END_TIME = "extra_end_time"
+        const val EXTRA_SESSION_DATE = "extra_session_date"
     }
 }

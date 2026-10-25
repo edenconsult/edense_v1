@@ -3,6 +3,7 @@ package com.example.data.alarm
 import android.content.Context
 import android.util.Log
 import com.example.data.local.EdenseDatabase
+import com.example.domain.schedule.periodBlock
 
 object ReminderRescheduler {
     suspend fun rescheduleAll(context: Context) {
@@ -29,10 +30,19 @@ object ReminderRescheduler {
                 academicCalendar = calendar,
                 academicTerms = terms
             )
+            LessonLogPromptScheduler.schedule(
+                context,
+                blockPeriods,
+                subject.name,
+                calendar,
+                terms
+            )
         }
 
         tasks.forEach { task ->
-            TaskReminderScheduler.schedule(context, task)
+            val linkedPeriod = periods.periodBlock(task.periodBlockId)
+                ?.takeIf { task.periodBlockId.isNotBlank() && it.subjectId == task.subjectId }
+            TaskReminderScheduler.schedule(context, task, linkedPeriod)
         }
 
         Log.i(

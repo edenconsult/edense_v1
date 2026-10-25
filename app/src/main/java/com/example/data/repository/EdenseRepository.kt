@@ -3,6 +3,7 @@ package com.example.data.repository
 import android.content.Context
 import androidx.room.withTransaction
 import com.example.data.alarm.AlarmScheduler
+import com.example.data.alarm.LessonLogPromptScheduler
 import com.example.data.alarm.TaskReminderScheduler
 import com.example.data.export.EdenseDataExporter
 import com.example.data.local.EdenseDatabase
@@ -14,6 +15,10 @@ import com.example.data.local.entity.TaskEntity
 import com.example.data.local.entity.TeacherProfileEntity
 import com.example.data.local.entity.TeachingSessionEntity
 import com.example.domain.schedule.SchedulingEngine
+import com.example.domain.schedule.lessonEndTimeMillis
+import com.example.domain.schedule.isLessonPeriodPast
+import com.example.domain.schedule.sessionPeriodMatchesDate
+import com.example.domain.schedule.periodBlock
 import com.example.data.notification.EdenseNotificationManager
 import com.example.data.notification.TaskChangeType
 import kotlinx.coroutines.flow.Flow
@@ -121,6 +126,22 @@ class EdenseRepository(
                 academicCalendar = calendar,
                 academicTerms = terms
             )
+            LessonLogPromptScheduler.schedule(
+                appContext,
+                blockPeriods,
+                subject.name,
+                calendar,
+                terms
+            )
+        }
+        rescheduleTasksForPeriods(periods)
+    }
+
+    private suspend fun rescheduleTasksForPeriods(periods: List<PeriodEntity>) {
+        database.taskDao().getPendingTasksDirect().forEach { task ->
+            val linkedPeriod = periods.periodBlock(task.periodBlockId)
+                ?.takeIf { task.periodBlockId.isNotBlank() && it.subjectId == task.subjectId }
+            TaskReminderScheduler.schedule(appContext, task, linkedPeriod)
         }
     }
 
@@ -178,6 +199,13 @@ class EdenseRepository(
     }
 
     suspend fun deselectSubject(subjectId: String) {
+        val subjectBlocks = database.periodDao().getAllPeriodsDirect()
+            .filter { it.subjectId == subjectId }
+            .groupBy { it.blockId }
+        subjectBlocks.keys.forEach { blockId ->
+            AlarmScheduler.cancelAlarm(appContext, blockId)
+            LessonLogPromptScheduler.cancel(appContext, blockId)
+        }
         database.subjectDao().updateSubjectSelection(
             id = subjectId,
             isSelected = false,
@@ -188,6 +216,7 @@ class EdenseRepository(
         )
         // Also clean up timetable periods for this subject
         database.periodDao().deletePeriodsForSubject(subjectId)
+        rescheduleClassReminders()
         requestCloudSync()
     }
 
@@ -269,12 +298,22 @@ class EdenseRepository(
                 academicCalendar = calendar,
                 academicTerms = terms
             )
+            LessonLogPromptScheduler.schedule(
+                appContext,
+                periods,
+                subject.name,
+                calendar,
+                terms
+            )
+            rescheduleTasksForPeriods(database.periodDao().getAllPeriodsDirect())
         }
     }
 
     suspend fun deletePeriod(id: String, blockId: String) {
         database.periodDao().deletePeriod(id)
         AlarmScheduler.cancelAlarm(appContext, blockId)
+        LessonLogPromptScheduler.cancel(appContext, blockId)
+        rescheduleClassReminders()
         requestCloudSync()
     }
 
@@ -287,8 +326,26 @@ class EdenseRepository(
         status: String,
         notes: String = "",
         createFollowUpTask: Boolean = false,
-        followUpDueDate: String = ""
+        followUpDueDate: String = "",
+        periodBlockId: String
     ) {
+        val blockPeriods = database.periodDao().getAllPeriodsDirect()
+            .filter { it.blockId == periodBlockId }
+        require(blockPeriods.isNotEmpty()) { "Select a valid timetable period for this lesson." }
+        val period = blockPeriods.maxByOrNull { SchedulingEngine.parseTimeToMinutes(it.endTime) }
+            ?: throw IllegalArgumentException("The selected timetable period is unavailable.")
+        require(period.subjectId == subjectId) {
+            "The selected period does not belong to this subject."
+        }
+        require(period.className.isBlank() || className == period.className) {
+            "The selected period does not belong to this class."
+        }
+        require(sessionPeriodMatchesDate(sessionDate, period.dayOfWeek)) {
+            "Choose a lesson date that matches the selected period's weekday."
+        }
+        require(isLessonPeriodPast(sessionDate, period.endTime, System.currentTimeMillis())) {
+            "A teaching session can only be logged after its period has ended."
+        }
         val session = TeachingSessionEntity(
             id = UUID.randomUUID().toString(),
             subjectId = subjectId,
@@ -297,7 +354,8 @@ class EdenseRepository(
             lastTopicCovered = lastTopicCovered,
             nextTopicPlanned = nextTopicPlanned,
             status = status,
-            notes = notes
+            notes = notes,
+            periodBlockId = periodBlockId
         )
         val followUpTask = if (createFollowUpTask) {
             require(nextTopicPlanned.isNotBlank()) {
@@ -332,8 +390,18 @@ class EdenseRepository(
         type: String,
         dueDate: String,
         reminderTime: String = "06:00",
-        notes: String = ""
+        notes: String = "",
+        periodBlockId: String = "",
+        periodReminderTiming: String = "BEFORE_START"
     ) {
+        val linkedPeriod = if (periodBlockId.isBlank()) {
+            null
+        } else {
+            database.periodDao().getAllPeriodsDirect()
+                .periodBlock(periodBlockId)
+                ?.takeIf { it.subjectId == subjectId }
+                ?: throw IllegalArgumentException("The selected class period is unavailable.")
+        }
         val task = TaskEntity(
             id = UUID.randomUUID().toString(),
             title = title,
@@ -342,10 +410,13 @@ class EdenseRepository(
             dueDate = dueDate,
             reminderTime = reminderTime,
             notes = notes,
+            className = linkedPeriod?.className.orEmpty(),
+            periodBlockId = periodBlockId,
+            periodReminderTiming = periodReminderTiming,
             isCompleted = false
         )
         database.taskDao().insertTask(task)
-        TaskReminderScheduler.schedule(appContext, task)
+        TaskReminderScheduler.schedule(appContext, task, linkedPeriod)
         val subject = database.subjectDao().getSelectedSubjectsDirect().firstOrNull { it.id == subjectId }
         EdenseNotificationManager.notifyTaskChange(appContext, task, TaskChangeType.CREATED, subject?.name)
         requestCloudSync()
@@ -371,7 +442,12 @@ class EdenseRepository(
             notes = notes
         )
         database.taskDao().insertTask(updated)
-        TaskReminderScheduler.schedule(appContext, updated)
+        val linkedPeriod = if (updated.periodBlockId.isBlank()) null else {
+            database.periodDao().getAllPeriodsDirect()
+                .periodBlock(updated.periodBlockId)
+                ?.takeIf { it.subjectId == subjectId }
+        }
+        TaskReminderScheduler.schedule(appContext, updated, linkedPeriod)
         val subject = database.subjectDao().getSelectedSubjectsDirect().firstOrNull { it.id == subjectId }
         val changeType = if (isRescheduled) TaskChangeType.RESCHEDULED else TaskChangeType.UPDATED
         EdenseNotificationManager.notifyTaskChange(appContext, updated, changeType, subject?.name)
@@ -386,7 +462,10 @@ class EdenseRepository(
             EdenseNotificationManager.cancelTaskNotification(appContext, id)
             EdenseNotificationManager.notifyTaskChange(appContext, task, TaskChangeType.COMPLETED)
         } else {
-            TaskReminderScheduler.schedule(appContext, task.copy(isCompleted = false))
+            val linkedPeriod = if (task.periodBlockId.isBlank()) null else {
+                database.periodDao().getAllPeriodsDirect().periodBlock(task.periodBlockId)
+            }
+            TaskReminderScheduler.schedule(appContext, task.copy(isCompleted = false), linkedPeriod)
         }
         requestCloudSync()
     }

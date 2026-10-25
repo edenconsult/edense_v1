@@ -49,6 +49,9 @@ class SessionsViewModel(private val repository: EdenseRepository) : ViewModel() 
     val allSessions: StateFlow<List<TeachingSessionEntity>> = repository.allSessions
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allPeriods = repository.allPeriods
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val filteredSessions: StateFlow<List<TeachingSessionEntity>> = combine(
         allSessions,
         filterSubjectId
@@ -76,7 +79,8 @@ class SessionsViewModel(private val repository: EdenseRepository) : ViewModel() 
         status: String,
         notes: String = "",
         createFollowUpTask: Boolean = false,
-        followUpDueDate: String = ""
+        followUpDueDate: String = "",
+        periodBlockId: String
     ) {
         viewModelScope.launch {
             repository.logSession(
@@ -88,7 +92,8 @@ class SessionsViewModel(private val repository: EdenseRepository) : ViewModel() 
                 status,
                 notes,
                 createFollowUpTask,
-                followUpDueDate
+                followUpDueDate,
+                periodBlockId
             )
         }
     }

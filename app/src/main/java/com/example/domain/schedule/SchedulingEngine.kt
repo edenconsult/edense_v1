@@ -27,6 +27,13 @@ data class SchoolPeriodSlot(
     val endMinute: Int get() = SchedulingEngine.parseTimeToMinutes(endTime)
 }
 
+fun List<PeriodEntity>.periodBlock(blockId: String): PeriodEntity? {
+    val block = filter { it.blockId == blockId }
+    val first = block.minByOrNull { SchedulingEngine.parseTimeToMinutes(it.startTime) } ?: return null
+    val last = block.maxByOrNull { SchedulingEngine.parseTimeToMinutes(it.endTime) } ?: return first
+    return first.copy(endTime = last.endTime)
+}
+
 sealed interface DayScheduleStatus {
     data class Vacation(val reason: String, val resumesDate: String) : DayScheduleStatus
     data class Empty(val message: String) : DayScheduleStatus

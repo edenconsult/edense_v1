@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
@@ -66,7 +68,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.entity.TaskEntity
+import com.example.data.local.entity.PeriodEntity
 import com.example.domain.task.TaskPriorityFilter
+import com.example.domain.task.PeriodReminderTiming
 import com.example.domain.task.TaskSortOrder
 import com.example.domain.task.TaskType
 import com.example.domain.task.TaskUrgency
@@ -89,6 +93,7 @@ fun TasksScreen(
     val tasks by viewModel.filteredTasks.collectAsStateWithLifecycle()
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val selectedSubjects by viewModel.selectedSubjects.collectAsStateWithLifecycle()
+    val periods by viewModel.allPeriods.collectAsStateWithLifecycle()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
@@ -539,9 +544,19 @@ fun TasksScreen(
     if (showAddDialog) {
         AddTaskDialog(
             selectedSubjects = selectedSubjects,
+            periods = periods,
             onDismiss = { showAddDialog = false },
-            onConfirm = { title, subjectId, type, dueDate, reminderTime, notes ->
-                viewModel.addTask(title, subjectId, type, dueDate, reminderTime, notes)
+            onConfirm = { title, subjectId, type, dueDate, reminderTime, notes, periodBlockId, timing ->
+                viewModel.addTask(
+                    title,
+                    subjectId,
+                    type,
+                    dueDate,
+                    reminderTime,
+                    notes,
+                    periodBlockId,
+                    timing
+                )
                 showAddDialog = false
             }
         )
@@ -666,8 +681,18 @@ fun TaskItemCard(
 @Composable
 fun AddTaskDialog(
     selectedSubjects: List<com.example.data.local.entity.SubjectEntity>,
+    periods: List<PeriodEntity>,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, subjectId: String, type: String, dueDate: String, reminderTime: String, notes: String) -> Unit
+    onConfirm: (
+        title: String,
+        subjectId: String,
+        type: String,
+        dueDate: String,
+        reminderTime: String,
+        notes: String,
+        periodBlockId: String,
+        periodReminderTiming: String
+    ) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var subjectId by remember { mutableStateOf(selectedSubjects.firstOrNull()?.id ?: "") }
@@ -678,6 +703,16 @@ fun AddTaskDialog(
     }
     var reminderTime by remember { mutableStateOf("06:00") }
     var notes by remember { mutableStateOf("") }
+    var selectedPeriodBlockId by remember { mutableStateOf("") }
+    var periodDropdownExpanded by remember { mutableStateOf(false) }
+    var periodReminderTiming by remember { mutableStateOf(PeriodReminderTiming.BEFORE_START.name) }
+    val availablePeriods = remember(periods, subjectId) {
+        periods.filter { it.subjectId == subjectId }
+            .groupBy { it.blockId }
+            .values
+            .mapNotNull { block -> block.minByOrNull { it.startTime } }
+    }
+    val selectedPeriod = availablePeriods.firstOrNull { it.blockId == selectedPeriodBlockId }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -689,7 +724,12 @@ fun AddTaskDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -761,6 +801,79 @@ fun AddTaskDialog(
                     }
                 }
 
+                ExposedDropdownMenuBox(
+                    expanded = periodDropdownExpanded,
+                    onExpandedChange = { periodDropdownExpanded = it },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = selectedPeriod?.let {
+                            "${it.className.ifBlank { "Class" }} • ${weekdayName(it.dayOfWeek)} • " +
+                                "${it.startTime}–${availablePeriodsForBlock(periods, it.blockId).maxOf { p -> p.endTime }}"
+                        } ?: "No linked period",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Link to a class period (optional)") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = periodDropdownExpanded)
+                        },
+                        modifier = Modifier.menuAnchor().fillMaxWidth().testTag("task_period_dropdown")
+                    )
+                    ExposedDropdownMenu(
+                        expanded = periodDropdownExpanded,
+                        onDismissRequest = { periodDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("No linked period") },
+                            onClick = {
+                                selectedPeriodBlockId = ""
+                                periodDropdownExpanded = false
+                            }
+                        )
+                        availablePeriods.forEach { period ->
+                            val blockEnd = availablePeriodsForBlock(periods, period.blockId)
+                                .maxOf { it.endTime }
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "${period.className.ifBlank { "Class" }} • ${weekdayName(period.dayOfWeek)} • " +
+                                            "${period.startTime}–$blockEnd"
+                                    )
+                                },
+                                onClick = {
+                                    selectedPeriodBlockId = period.blockId
+                                    periodDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (selectedPeriod != null) {
+                    Text(
+                        "Reminder timing (next occurrence)",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        PeriodReminderTiming.entries.forEach { timing ->
+                            FilterChip(
+                                selected = periodReminderTiming == timing.name,
+                                onClick = { periodReminderTiming = timing.name },
+                                label = { Text(timing.label) },
+                                modifier = Modifier.testTag("task_period_timing_${timing.name}")
+                            )
+                        }
+                    }
+                    Text(
+                        "Before-class reminders are 5 minutes before the selected boundary; " +
+                            "after-class reminders are sent when the period ends. The task due date " +
+                            "remains separate; this reminder is for the next scheduled class.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -769,14 +882,20 @@ fun AddTaskDialog(
                         label = "Due Date",
                         dateValue = dueDate,
                         onDateSelected = { dueDate = it },
-                        modifier = Modifier.weight(1f).testTag("add_task_date")
+                        modifier = if (selectedPeriod == null) {
+                            Modifier.weight(1f).testTag("add_task_date")
+                        } else {
+                            Modifier.fillMaxWidth().testTag("add_task_date")
+                        }
                     )
-                    com.example.ui.components.EdenseTimePickerField(
-                        label = "Reminder Time",
-                        timeValue = reminderTime,
-                        onTimeSelected = { reminderTime = it },
-                        modifier = Modifier.weight(1f).testTag("add_task_time")
-                    )
+                    if (selectedPeriod == null) {
+                        com.example.ui.components.EdenseTimePickerField(
+                            label = "Reminder Time",
+                            timeValue = reminderTime,
+                            onTimeSelected = { reminderTime = it },
+                            modifier = Modifier.weight(1f).testTag("add_task_time")
+                        )
+                    }
                 }
 
                 OutlinedTextField(
@@ -791,7 +910,16 @@ fun AddTaskDialog(
             Button(
                 onClick = {
                     if (title.isNotBlank()) {
-                        onConfirm(title, subjectId, type, dueDate, reminderTime, notes)
+                        onConfirm(
+                            title,
+                            subjectId,
+                            type,
+                            dueDate,
+                            reminderTime,
+                            notes,
+                            selectedPeriodBlockId,
+                            periodReminderTiming
+                        )
                     }
                 },
                 enabled = title.isNotBlank(),
@@ -810,4 +938,16 @@ fun AddTaskDialog(
             }
         }
     )
+}
+
+private fun availablePeriodsForBlock(periods: List<PeriodEntity>, blockId: String): List<PeriodEntity> =
+    periods.filter { it.blockId == blockId }
+
+private fun weekdayName(dayOfWeek: Int): String = when (dayOfWeek) {
+    1 -> "Monday"
+    2 -> "Tuesday"
+    3 -> "Wednesday"
+    4 -> "Thursday"
+    5 -> "Friday"
+    else -> "Unknown day"
 }

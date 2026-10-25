@@ -63,6 +63,9 @@ class TasksViewModel(private val repository: EdenseRepository) : ViewModel() {
     val selectedSubjects: StateFlow<List<SubjectEntity>> = repository.selectedSubjects
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allPeriods = repository.allPeriods
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val allTasks: StateFlow<List<TaskEntity>> = repository.allTasks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -178,10 +181,21 @@ class TasksViewModel(private val repository: EdenseRepository) : ViewModel() {
         type: String,
         dueDate: String,
         reminderTime: String,
-        notes: String
+        notes: String,
+        periodBlockId: String,
+        periodReminderTiming: String
     ) {
         viewModelScope.launch {
-            repository.addTask(title, subjectId, type, dueDate, reminderTime, notes)
+            repository.addTask(
+                title,
+                subjectId,
+                type,
+                dueDate,
+                reminderTime,
+                notes,
+                periodBlockId,
+                periodReminderTiming
+            )
         }
     }
 

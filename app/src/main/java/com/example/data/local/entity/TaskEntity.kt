@@ -14,5 +14,7 @@ data class TaskEntity(
     val isCompleted: Boolean = false,
     val notes: String = "",
     val className: String = "",
+    val periodBlockId: String = "",
+    val periodReminderTiming: String = "BEFORE_START",
     val createdAt: Long = System.currentTimeMillis()
 )

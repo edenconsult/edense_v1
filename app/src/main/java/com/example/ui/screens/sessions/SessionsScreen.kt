@@ -73,6 +73,7 @@ fun SessionsScreen(
     val carryForwards by viewModel.carryForwardSummaries.collectAsStateWithLifecycle()
     val sessions by viewModel.filteredSessions.collectAsStateWithLifecycle()
     val selectedSubjects by viewModel.selectedSubjects.collectAsStateWithLifecycle()
+    val periods by viewModel.allPeriods.collectAsStateWithLifecycle()
     val filterSubjectId by viewModel.filterSubjectId.collectAsStateWithLifecycle()
 
     var showLogSheet by remember { mutableStateOf(false) }
@@ -218,8 +219,9 @@ fun SessionsScreen(
         ) {
             SessionLogBottomSheetContent(
                 initialBlock = null,
+                periods = periods,
                 selectedSubjects = selectedSubjects,
-                onSave = { subjectId, className, sessionDate, lastTopic, nextTopic, status, notes,
+                onSave = { subjectId, className, sessionDate, periodBlockId, lastTopic, nextTopic, status, notes,
                            createFollowUpTask, followUpDueDate ->
                     viewModel.logSession(
                         subjectId,
@@ -230,7 +232,8 @@ fun SessionsScreen(
                         status,
                         notes,
                         createFollowUpTask,
-                        followUpDueDate
+                        followUpDueDate,
+                        periodBlockId
                     )
                     scope.launch { sheetState.hide() }.invokeOnCompletion {
                         showLogSheet = false

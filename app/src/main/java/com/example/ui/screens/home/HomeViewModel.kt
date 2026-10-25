@@ -43,6 +43,9 @@ class HomeViewModel(private val repository: EdenseRepository) : ViewModel() {
     val selectedSubjects: StateFlow<List<SubjectEntity>> = repository.selectedSubjects
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allPeriods = repository.allPeriods
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val pendingTasks: StateFlow<List<TaskEntity>> = repository.pendingTasks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -93,7 +96,8 @@ class HomeViewModel(private val repository: EdenseRepository) : ViewModel() {
         status: String,
         notes: String = "",
         createFollowUpTask: Boolean = false,
-        followUpDueDate: String = ""
+        followUpDueDate: String = "",
+        periodBlockId: String
     ) {
         viewModelScope.launch {
             repository.logSession(
@@ -105,7 +109,8 @@ class HomeViewModel(private val repository: EdenseRepository) : ViewModel() {
                 status = status,
                 notes = notes,
                 createFollowUpTask = createFollowUpTask,
-                followUpDueDate = followUpDueDate
+                followUpDueDate = followUpDueDate,
+                periodBlockId = periodBlockId
             )
         }
     }

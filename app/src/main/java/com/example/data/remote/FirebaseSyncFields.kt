@@ -99,5 +99,7 @@ internal fun TaskEntity.toFirestoreFields(userId: String): Map<String, Any> =
         "reminderTime" to reminderTime,
         "isCompleted" to isCompleted,
         "notes" to notes,
+        "periodBlockId" to periodBlockId,
+        "periodReminderTiming" to periodReminderTiming,
         "createdAt" to createdAt
     )

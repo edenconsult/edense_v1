@@ -50,6 +50,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import com.example.data.remote.SyncState
+import com.example.data.alarm.LessonLogPromptController
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -103,6 +104,7 @@ fun EdenseNav(
     val pendingTaskCount = tasksViewModel.allTasks.collectAsStateWithLifecycle().value.count { !it.isCompleted }
     val syncManager = setupViewModel.syncManager
     val syncState by syncManager.syncState.collectAsStateWithLifecycle()
+    val lessonPrompt by LessonLogPromptController.pendingPrompt.collectAsStateWithLifecycle()
 
     LaunchedEffect(syncManager, setupViewModel) {
         combine(
@@ -119,6 +121,10 @@ fun EdenseNav(
 
     var currentScreen by rememberSaveable { mutableIntStateOf(NavDestination.HOME.ordinal) }
     var inSetupScreen by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(lessonPrompt) {
+        if (lessonPrompt != null) currentScreen = NavDestination.HOME.ordinal
+    }
 
     val isSetupRequired = currentUser == null ||
         profile?.isOnboardingCompleted != true ||
@@ -329,6 +335,8 @@ fun EdenseNav(
                     viewModel = homeViewModel,
                     onNavigateToTimetable = { currentScreen = NavDestination.TIMETABLE.ordinal },
                     onNavigateToSessions = { currentScreen = NavDestination.SESSIONS.ordinal },
+                    lessonPrompt = lessonPrompt,
+                    onLessonPromptHandled = LessonLogPromptController::clear,
                     modifier = Modifier.padding(innerPadding)
                 )
             }

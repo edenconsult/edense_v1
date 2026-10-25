@@ -10,10 +10,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -52,11 +56,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.entity.SubjectEntity
+import com.example.data.local.entity.PeriodEntity
+import com.example.data.alarm.LessonLogPrompt
+import com.example.domain.schedule.lessonEndTimeMillis
+import com.example.domain.schedule.isLessonPeriodPast
+import com.example.domain.schedule.sessionDateDayOfWeek
 import com.example.domain.schedule.ClassBlock
 import com.example.domain.schedule.ClassroomAssignments
 import com.example.domain.schedule.DayScheduleStatus
@@ -71,6 +84,8 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     onNavigateToTimetable: () -> Unit,
     onNavigateToSessions: () -> Unit,
+    lessonPrompt: LessonLogPrompt? = null,
+    onLessonPromptHandled: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val currentTime by viewModel.currentTimeStr.collectAsStateWithLifecycle()
@@ -79,14 +94,26 @@ fun HomeScreen(
     val profile by viewModel.teacherProfile.collectAsStateWithLifecycle()
     val calendar by viewModel.academicCalendar.collectAsStateWithLifecycle()
     val selectedSubjects by viewModel.selectedSubjects.collectAsStateWithLifecycle()
+    val periods by viewModel.allPeriods.collectAsStateWithLifecycle()
     val pendingTasks by viewModel.pendingTasks.collectAsStateWithLifecycle()
     val scheduleStatus by viewModel.scheduleStatus.collectAsStateWithLifecycle()
 
     var showLogSheet by remember { mutableStateOf(false) }
     var loggingBlock by remember { mutableStateOf<ClassBlock?>(null) }
+    var loggingBlockId by remember { mutableStateOf("") }
+    var requestedSessionDate by remember { mutableStateOf("") }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(lessonPrompt) {
+        lessonPrompt?.let {
+            loggingBlock = null
+            loggingBlockId = it.blockId
+            requestedSessionDate = it.sessionDate
+            showLogSheet = true
+        }
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().testTag("home_screen"),
@@ -198,6 +225,8 @@ fun HomeScreen(
                             countdownText = status.countdownText,
                             onLogSession = {
                                 loggingBlock = status.currentBlock
+                                loggingBlockId = status.currentBlock.blockId
+                                requestedSessionDate = currentDate
                                 showLogSheet = true
                             }
                         )
@@ -239,6 +268,8 @@ fun HomeScreen(
                 Button(
                     onClick = {
                         loggingBlock = null
+                        loggingBlockId = ""
+                        requestedSessionDate = currentDate
                         showLogSheet = true
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -318,8 +349,11 @@ fun HomeScreen(
         ) {
             SessionLogBottomSheetContent(
                 initialBlock = loggingBlock,
+                initialBlockId = loggingBlockId,
+                initialDate = requestedSessionDate,
                 selectedSubjects = selectedSubjects,
-                onSave = { subjectId, className, sessionDate, lastTopic, nextTopic, status, notes,
+                periods = periods,
+                onSave = { subjectId, className, sessionDate, periodBlockId, lastTopic, nextTopic, status, notes,
                            createFollowUpTask, followUpDueDate ->
                     viewModel.logSession(
                         subjectId,
@@ -330,13 +364,16 @@ fun HomeScreen(
                         status,
                         notes,
                         createFollowUpTask,
-                        followUpDueDate
+                        followUpDueDate,
+                        periodBlockId
                     )
+                    onLessonPromptHandled()
                     scope.launch { sheetState.hide() }.invokeOnCompletion {
                         showLogSheet = false
                     }
                 },
                 onCancel = {
+                    onLessonPromptHandled()
                     scope.launch { sheetState.hide() }.invokeOnCompletion {
                         showLogSheet = false
                     }
@@ -633,11 +670,15 @@ fun EmptyTimetableCard(
 @Composable
 fun SessionLogBottomSheetContent(
     initialBlock: ClassBlock?,
+    initialBlockId: String = initialBlock?.blockId.orEmpty(),
+    initialDate: String = "",
     selectedSubjects: List<SubjectEntity>,
+    periods: List<PeriodEntity>,
     onSave: (
         subjectId: String,
         className: String,
         sessionDate: String,
+        periodBlockId: String,
         lastTopic: String,
         nextTopic: String,
         status: String,
@@ -647,7 +688,9 @@ fun SessionLogBottomSheetContent(
     ) -> Unit,
     onCancel: () -> Unit
 ) {
-    val initialSubjectId = initialBlock?.subjectId ?: selectedSubjects.firstOrNull()?.id.orEmpty()
+    val initialPeriod = periods.firstOrNull { it.blockId == initialBlockId }
+    val initialSubjectId = initialBlock?.subjectId ?: initialPeriod?.subjectId
+        ?: selectedSubjects.firstOrNull()?.id.orEmpty()
     var selectedSubjectId by remember {
         mutableStateOf(initialSubjectId)
     }
@@ -660,6 +703,7 @@ fun SessionLogBottomSheetContent(
     var selectedClassName by remember {
         mutableStateOf(
             initialBlock?.className?.takeIf(String::isNotBlank)
+                ?: initialPeriod?.className?.takeIf(String::isNotBlank)
                 ?: assignedClasses.firstOrNull().orEmpty()
         )
     }
@@ -672,8 +716,11 @@ fun SessionLogBottomSheetContent(
         }
     }
     var sessionDate by remember {
-        mutableStateOf(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date()))
+        mutableStateOf(initialDate.ifBlank {
+            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).format(java.util.Date())
+        })
     }
+    var selectedPeriodBlockId by remember { mutableStateOf(initialBlockId) }
     var lastTopic by remember { mutableStateOf("") }
     var nextTopic by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("COMPLETED") }
@@ -688,10 +735,47 @@ fun SessionLogBottomSheetContent(
             }
         )
     }
+    var currentTimeMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    BackHandler(enabled = keyboardVisible) {
+        keyboardController?.hide()
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTimeMillis = System.currentTimeMillis()
+            kotlinx.coroutines.delay(15_000)
+        }
+    }
+    val periodDayOfWeek = remember(sessionDate) { sessionDateDayOfWeek(sessionDate) }
+    val availablePeriods = remember(periods, selectedSubjectId, periodDayOfWeek) {
+        periods.filter {
+            it.subjectId == selectedSubjectId &&
+                it.dayOfWeek == periodDayOfWeek &&
+                (it.className.isBlank() || selectedClassName.isBlank() || it.className == selectedClassName)
+        }
+            .groupBy { it.blockId }
+            .values
+            .mapNotNull { block -> block.minByOrNull { it.startTime } }
+    }
+    val selectedPeriod = availablePeriods.firstOrNull { it.blockId == selectedPeriodBlockId }
+    val blockPeriods = remember(periods, selectedPeriodBlockId) {
+        periods.filter { it.blockId == selectedPeriodBlockId }
+    }
+    val selectedPeriodEnd = blockPeriods.maxByOrNull { it.endTime }?.endTime.orEmpty()
+    val selectedLessonEnd = selectedPeriod?.let { lessonEndTimeMillis(sessionDate, selectedPeriodEnd) }
+    val canLogSession = selectedSubjectId.isNotBlank() &&
+        selectedPeriod != null &&
+        periodDayOfWeek == selectedPeriod.dayOfWeek &&
+        selectedLessonEnd != null &&
+        isLessonPeriodPast(sessionDate, selectedPeriodEnd, currentTimeMillis) &&
+        lastTopic.isNotBlank()
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .imePadding()
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -751,6 +835,48 @@ fun SessionLogBottomSheetContent(
             onDateSelected = { sessionDate = it },
             modifier = Modifier.fillMaxWidth().testTag("session_date_input")
         )
+
+        Text(
+            text = "Class period:",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold
+        )
+        if (availablePeriods.isEmpty()) {
+            Text(
+                "No period is scheduled for this subject on the selected date.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                availablePeriods.forEach { period ->
+                    val endTime = periods.filter { it.blockId == period.blockId }.maxOf { it.endTime }
+                    FilterChip(
+                        selected = selectedPeriodBlockId == period.blockId,
+                        onClick = {
+                            selectedPeriodBlockId = period.blockId
+                            selectedClassName = period.className.ifBlank { selectedClassName }
+                        },
+                        label = {
+                            Text(
+                                "${period.className.ifBlank { selectedClassName.ifBlank { "Class" } }} • " +
+                                    "${period.startTime}–$endTime"
+                            )
+                        },
+                        modifier = Modifier.testTag("session_period_${period.blockId}")
+                    )
+                }
+            }
+        }
+        if (selectedPeriod != null && selectedLessonEnd != null &&
+            selectedLessonEnd >= currentTimeMillis
+        ) {
+            Text(
+                "This lesson can be logged after ${selectedPeriodEnd}.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
 
         OutlinedTextField(
             value = lastTopic,
@@ -833,6 +959,7 @@ fun SessionLogBottomSheetContent(
                             selectedSubjectId,
                             selectedClassName,
                             sessionDate,
+                            selectedPeriodBlockId,
                             lastTopic,
                             nextTopic,
                             status,
@@ -842,7 +969,7 @@ fun SessionLogBottomSheetContent(
                         )
                     }
                 },
-                enabled = selectedSubjectId.isNotBlank() && lastTopic.isNotBlank(),
+                enabled = canLogSession,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 modifier = Modifier.testTag("save_session_button")
             ) {
