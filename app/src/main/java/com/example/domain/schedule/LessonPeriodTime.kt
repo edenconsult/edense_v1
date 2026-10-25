@@ -4,6 +4,20 @@ import java.text.ParsePosition
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import com.example.data.local.entity.PeriodEntity
+
+fun periodsForSessionDate(
+    periods: List<PeriodEntity>,
+    subjectId: String,
+    sessionDate: String
+): List<PeriodEntity> {
+    val dayOfWeek = try {
+        SchedulingEngine.dayOfWeekFromDate(sessionDate)
+    } catch (_: IllegalArgumentException) {
+        return emptyList()
+    }
+    return periods.filter { it.subjectId == subjectId && it.dayOfWeek == dayOfWeek }
+}
 
 fun lessonEndTimeMillis(sessionDate: String, endTime: String): Long? {
     val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply {
@@ -34,20 +48,9 @@ fun sessionPeriodMatchesDate(sessionDate: String, periodDayOfWeek: Int): Boolean
 }
 
 fun sessionDateDayOfWeek(sessionDate: String): Int {
-    val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply {
-        isLenient = false
-    }
-    val position = ParsePosition(0)
-    val date = dateFormat.parse(sessionDate, position)
-        ?.takeIf { position.index == sessionDate.length && dateFormat.format(it) == sessionDate }
-        ?: return 0
-    val dayOfWeek = Calendar.getInstance().apply { time = date }.get(Calendar.DAY_OF_WEEK)
-    return when (dayOfWeek) {
-        Calendar.MONDAY -> 1
-        Calendar.TUESDAY -> 2
-        Calendar.WEDNESDAY -> 3
-        Calendar.THURSDAY -> 4
-        Calendar.FRIDAY -> 5
-        else -> 0
+    return try {
+        SchedulingEngine.dayOfWeekFromDate(sessionDate)
+    } catch (_: IllegalArgumentException) {
+        0
     }
 }

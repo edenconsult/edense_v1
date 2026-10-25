@@ -70,6 +70,7 @@ import com.example.data.alarm.LessonLogPrompt
 import com.example.domain.schedule.lessonEndTimeMillis
 import com.example.domain.schedule.isLessonPeriodPast
 import com.example.domain.schedule.sessionDateDayOfWeek
+import com.example.domain.schedule.periodsForSessionDate
 import com.example.domain.schedule.ClassBlock
 import com.example.domain.schedule.ClassroomAssignments
 import com.example.domain.schedule.DayScheduleStatus
@@ -748,15 +749,20 @@ fun SessionLogBottomSheetContent(
         }
     }
     val periodDayOfWeek = remember(sessionDate) { sessionDateDayOfWeek(sessionDate) }
-    val availablePeriods = remember(periods, selectedSubjectId, periodDayOfWeek) {
-        periods.filter {
-            it.subjectId == selectedSubjectId &&
-                it.dayOfWeek == periodDayOfWeek &&
-                (it.className.isBlank() || selectedClassName.isBlank() || it.className == selectedClassName)
-        }
+    val availablePeriods = remember(periods, selectedSubjectId, sessionDate) {
+        periodsForSessionDate(periods, selectedSubjectId, sessionDate)
             .groupBy { it.blockId }
             .values
             .mapNotNull { block -> block.minByOrNull { it.startTime } }
+    }
+    LaunchedEffect(selectedSubjectId, sessionDate, availablePeriods) {
+        if (availablePeriods.none { it.blockId == selectedPeriodBlockId }) {
+            val nextPeriod = availablePeriods.firstOrNull()
+            selectedPeriodBlockId = nextPeriod?.blockId.orEmpty()
+            nextPeriod?.className?.takeIf(String::isNotBlank)?.let {
+                selectedClassName = it
+            }
+        }
     }
     val selectedPeriod = availablePeriods.firstOrNull { it.blockId == selectedPeriodBlockId }
     val blockPeriods = remember(periods, selectedPeriodBlockId) {
@@ -808,27 +814,6 @@ fun SessionLogBottomSheetContent(
             }
         }
 
-        if (assignedClasses.isNotEmpty()) {
-            Text(
-                text = "Class:",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold
-            )
-            if (assignedClasses.size > 1) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    assignedClasses.forEach { className ->
-                        FilterChip(
-                            selected = selectedClassName == className,
-                            onClick = { selectedClassName = className },
-                            label = { Text(className) }
-                        )
-                    }
-                }
-            } else {
-                Text(assignedClasses.first(), style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-
         com.example.ui.components.EdenseDatePickerField(
             label = "Lesson Date",
             dateValue = sessionDate,
@@ -843,7 +828,11 @@ fun SessionLogBottomSheetContent(
         )
         if (availablePeriods.isEmpty()) {
             Text(
-                "No period is scheduled for this subject on the selected date.",
+                if (periodDayOfWeek == 0) {
+                    "Choose a weekday to see this subject's scheduled periods."
+                } else {
+                    "No period is scheduled for this subject on ${weekdayLabel(periodDayOfWeek)}."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
@@ -866,6 +855,7 @@ fun SessionLogBottomSheetContent(
                         modifier = Modifier.testTag("session_period_${period.blockId}")
                     )
                 }
+
             }
         }
         if (selectedPeriod != null && selectedLessonEnd != null &&
@@ -976,6 +966,18 @@ fun SessionLogBottomSheetContent(
                 Text("Save Session")
             }
         }
+
         Spacer(modifier = Modifier.height(16.dp))
     }
+}
+
+private fun weekdayLabel(dayOfWeek: Int): String = when (dayOfWeek) {
+    1 -> "Monday"
+    2 -> "Tuesday"
+    3 -> "Wednesday"
+    4 -> "Thursday"
+    5 -> "Friday"
+    6 -> "Saturday"
+    7 -> "Sunday"
+    else -> "the selected day"
 }

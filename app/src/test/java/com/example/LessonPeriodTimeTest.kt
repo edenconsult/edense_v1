@@ -5,6 +5,7 @@ import com.example.data.alarm.TaskReminderScheduler
 import com.example.data.local.entity.PeriodEntity
 import com.example.domain.schedule.lessonEndTimeMillis
 import com.example.domain.schedule.isLessonPeriodPast
+import com.example.domain.schedule.periodsForSessionDate
 import com.example.domain.schedule.sessionDateDayOfWeek
 import com.example.domain.schedule.sessionPeriodMatchesDate
 import com.example.domain.task.PeriodReminderTiming
@@ -20,10 +21,36 @@ import java.util.Locale
 class LessonPeriodTimeTest {
     @Test
     fun sessionDateMustMatchTheSelectedTimetableWeekday() {
-        assertEquals(0, sessionDateDayOfWeek("2026-10-25"))
+        assertEquals(7, sessionDateDayOfWeek("2026-10-25"))
+        assertEquals(1, sessionDateDayOfWeek("2026-10-26"))
         assertTrue(sessionPeriodMatchesDate("2026-10-26", 1))
         assertFalse(sessionPeriodMatchesDate("2026-10-25", 1))
         assertFalse(sessionPeriodMatchesDate("2026-02-30", 1))
+    }
+
+    @Test
+    fun changingFromSundayToMondayLoadsTheSubjectsMondayPeriod() {
+        val mondayPeriod = PeriodEntity(
+            id = "monday-period",
+            subjectId = "math",
+            dayOfWeek = 1,
+            startTime = "08:00",
+            endTime = "09:00",
+            blockId = "monday-block",
+            className = "3A"
+        )
+        val tuesdayPeriod = mondayPeriod.copy(
+            id = "tuesday-period",
+            dayOfWeek = 2,
+            blockId = "tuesday-block"
+        )
+
+        assertTrue(periodsForSessionDate(listOf(mondayPeriod, tuesdayPeriod), "math", "2026-10-25").isEmpty())
+        assertEquals(
+            listOf(mondayPeriod),
+            periodsForSessionDate(listOf(mondayPeriod, tuesdayPeriod), "math", "2026-10-26")
+        )
+        assertTrue(periodsForSessionDate(listOf(mondayPeriod), "english", "2026-10-26").isEmpty())
     }
 
     @Test
