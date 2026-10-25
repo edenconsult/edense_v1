@@ -3,8 +3,8 @@
 
 1. [x] Implement a feature that allows users to add their own subjects or preload all the GES SHS Elective Subjects, including missing ones like Islamic Religious Studies (IRS).
 2. [x] Modify the sign-in process to ensure that users are prompted to sign in before accessing the setup work. Ensure that a confirmation message or the user's name/email is displayed upon successful sign-in.
-3. Fix the functionality of the "save calendar" and "save profile" buttons to ensure they work as intended.
-4. Update the session outcome display to show "Unfinished" instead of "Partial (Unfinished)" for clarity.
+3. [x] Fix the functionality of the "save calendar" and "save profile" buttons to ensure they work as intended.
+4. [x] Update the session outcome display to show "Unfinished" instead of "Partial (Unfinished)" for clarity.
 5. Change the Academic Tasks' type input to a select dropdown for better user experience and data consistency.
 6. Add a feature that allows users to filter and sort their academic tasks based on priority, due date, or subject.
 7. Implement a notification system that alerts users of upcoming deadlines or changes to their academic tasks.

@@ -253,6 +253,8 @@ fun SetupScreen(
                     AcademicCalendarTab(
                         calendar = calendar,
                         terms = academicTerms,
+                        errorMessage = errorMessage,
+                        successMessage = successMessage,
                         onSave = { year, system, term, start, end, pauseOnVacation, manualVacation, savedTerms ->
                             viewModel.saveCalendar(
                                 year,
@@ -271,6 +273,8 @@ fun SetupScreen(
                     TeacherProfileTab(
                         profile = profile,
                         viewModel = viewModel,
+                        errorMessage = errorMessage,
+                        successMessage = successMessage,
                         onSave = { name, school, start, end ->
                             viewModel.saveProfile(name, school, start, end)
                         }
@@ -790,6 +794,8 @@ private fun AddCustomSubjectDialog(
 fun AcademicCalendarTab(
     calendar: com.example.data.local.entity.AcademicCalendarEntity?,
     terms: List<com.example.data.local.entity.AcademicTermEntity>,
+    errorMessage: String? = null,
+    successMessage: String? = null,
     onSave: (year: String, system: String, term: String, start: String, end: String, pauseOnVacation: Boolean, manualVacation: Boolean, terms: List<com.example.data.local.entity.AcademicTermEntity>) -> Unit
 ) {
     val defaultTerm = remember(calendar) {
@@ -1015,22 +1021,56 @@ fun AcademicCalendarTab(
         item {
             Button(
                 onClick = {
-                    val orderedTerms = termDrafts.mapIndexed { index, term -> term.copy(orderIndex = index) }
+                    val activeFirst = termDrafts.firstOrNull() ?: defaultTerm
                     onSave(
                         academicYear,
                         systemType,
-                        termName,
-                        startDate,
-                        endDate,
+                        activeFirst.name,
+                        activeFirst.startDate,
+                        activeFirst.endDate,
                         pauseOnVacation,
                         manualVacation,
-                        orderedTerms
+                        termDrafts
                     )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = EdenseNavy),
                 modifier = Modifier.fillMaxWidth().testTag("save_calendar_button")
             ) {
+                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text("Save Academic Calendar")
+            }
+        }
+
+        if (successMessage != null || errorMessage != null) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (errorMessage != null) MaterialTheme.colorScheme.errorContainer
+                        else EdenseGreen.copy(alpha = 0.15f)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("calendar_feedback_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (errorMessage != null) Icons.Default.Close else Icons.Default.Check,
+                            contentDescription = null,
+                            tint = if (errorMessage != null) MaterialTheme.colorScheme.error else EdenseGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = (errorMessage ?: successMessage).orEmpty(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (errorMessage != null) MaterialTheme.colorScheme.error else EdenseGreen,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
         }
     }
@@ -1040,6 +1080,8 @@ fun AcademicCalendarTab(
 fun TeacherProfileTab(
     profile: com.example.data.local.entity.TeacherProfileEntity?,
     viewModel: SetupViewModel,
+    errorMessage: String? = null,
+    successMessage: String? = null,
     onSave: (name: String, school: String, start: String, end: String) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -1118,7 +1160,41 @@ fun TeacherProfileTab(
                 colors = ButtonDefaults.buttonColors(containerColor = EdenseNavy),
                 modifier = Modifier.fillMaxWidth().testTag("save_profile_button")
             ) {
+                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text("Save Profile")
+            }
+        }
+
+        if (successMessage != null || errorMessage != null) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (errorMessage != null) MaterialTheme.colorScheme.errorContainer
+                        else EdenseGreen.copy(alpha = 0.15f)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("profile_feedback_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (errorMessage != null) Icons.Default.Close else Icons.Default.Check,
+                            contentDescription = null,
+                            tint = if (errorMessage != null) MaterialTheme.colorScheme.error else EdenseGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = (errorMessage ?: successMessage).orEmpty(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (errorMessage != null) MaterialTheme.colorScheme.error else EdenseGreen,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
             }
         }
 

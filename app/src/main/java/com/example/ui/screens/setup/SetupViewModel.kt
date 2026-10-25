@@ -82,9 +82,20 @@ class SetupViewModel(
                 _errorMessage.value = null
                 _successMessage.value = null
             }
+            if (!syncManager.isOnline) {
+                val msg = "No internet connection detected. Continuing in offline mode."
+                _syncMessage.value = msg
+                if (!preserveFeedback) showSuccess(msg)
+                return@launch
+            }
             _isSyncing.value = true
             try {
-                val result = syncManager.syncLocalDataToCloud()
+                val user = syncManager.currentUser
+                if (user == null) {
+                    _errorMessage.value = "Please connect your Google account to sync with Cloud Firestore."
+                    return@launch
+                }
+                val result = syncManager.performBidirectionalSync(user.uid)
                 result.fold(
                     onSuccess = {
                         _syncMessage.value = "Successfully backed up and synced to Cloud Firestore!"
@@ -118,19 +129,29 @@ class SetupViewModel(
 
     fun saveProfile(name: String, schoolName: String, startTime: String, endTime: String) {
         val current = profile.value ?: TeacherProfileEntity()
+        _errorMessage.value = null
+        _successMessage.value = null
+
+        if (startTime.isNotBlank() && endTime.isNotBlank() && startTime >= endTime) {
+            _errorMessage.value = "School start time ($startTime) must be before closing time ($endTime)."
+            return
+        }
+
         viewModelScope.launch {
-            _errorMessage.value = null
-            _successMessage.value = null
             try {
                 repository.saveTeacherProfile(
                     current.copy(
                         name = name.ifBlank { "Teacher" },
                         schoolName = schoolName.ifBlank { "Senior High School" },
                         schoolStartTime = startTime.ifBlank { "07:00" },
-                        schoolEndTime = endTime.ifBlank { "15:00" }
+                        schoolEndTime = endTime.ifBlank { "15:00" },
+                        updatedAt = System.currentTimeMillis()
                     )
                 )
                 showSuccess("Profile saved successfully.")
+                if (syncManager.isOnline && syncManager.isUserSignedIn) {
+                    syncManager.syncLocalDataToCloud()
+                }
             } catch (error: Exception) {
                 showError("Couldn't save profile: ${error.localizedMessage ?: "Unknown error"}")
             }
@@ -149,30 +170,59 @@ class SetupViewModel(
     ) {
         _errorMessage.value = null
         _successMessage.value = null
+
         val current = calendar.value ?: AcademicCalendarEntity()
-        if (!current.copy(
-                termStartDate = startDate,
-                termEndDate = endDate
-            ).hasValidTerms(terms)
-        ) {
-            _errorMessage.value = "Enter valid, non-overlapping term dates in chronological order."
-            return
+        val cleanedTerms = terms.filter { it.name.isNotBlank() || it.startDate.isNotBlank() || it.endDate.isNotBlank() }
+
+        // Validate each term that has dates
+        for (term in cleanedTerms) {
+            if (term.startDate.isNotBlank() && term.endDate.isNotBlank() && term.startDate > term.endDate) {
+                _errorMessage.value = "Start date cannot be after end date for ${term.name} (${term.startDate} to ${term.endDate})."
+                return
+            }
         }
+
+        val termsToSave = if (cleanedTerms.isEmpty()) {
+            listOf(
+                AcademicTermEntity(
+                    id = "active_term_1",
+                    name = termName.ifBlank { if (systemType == "TERM") "Term 1" else "Semester 1" },
+                    startDate = startDate.ifBlank { "2026-09-01" },
+                    endDate = endDate.ifBlank { "2026-12-18" },
+                    orderIndex = 0
+                )
+            )
+        } else {
+            cleanedTerms.mapIndexed { index, term ->
+                term.copy(
+                    orderIndex = index,
+                    name = term.name.ifBlank { if (systemType == "TERM") "Term ${index + 1}" else "Semester ${index + 1}" },
+                    startDate = term.startDate.ifBlank { if (index == 0) startDate.ifBlank { "2026-09-01" } else "" },
+                    endDate = term.endDate.ifBlank { if (index == 0) endDate.ifBlank { "2026-12-18" } else "" }
+                )
+            }
+        }
+
         viewModelScope.launch {
             try {
-                repository.saveAcademicCalendar(
-                    current.copy(
-                        academicYear = academicYear.ifBlank { "2026/2027" },
-                        systemType = systemType,
-                        activeTermName = terms.firstOrNull()?.name?.ifBlank { termName } ?: termName,
-                        termStartDate = terms.firstOrNull()?.startDate ?: startDate,
-                        termEndDate = terms.firstOrNull()?.endDate ?: endDate,
-                        pauseAlarmsDuringVacation = pauseOnVacation,
-                        isManualVacationMode = manualVacation
-                    )
+                val first = termsToSave.first()
+                val updatedCalendar = current.copy(
+                    academicYear = academicYear.ifBlank { "2026/2027" },
+                    systemType = systemType,
+                    activeTermName = first.name,
+                    termStartDate = first.startDate,
+                    termEndDate = first.endDate,
+                    pauseAlarmsDuringVacation = pauseOnVacation,
+                    isManualVacationMode = manualVacation,
+                    updatedAt = System.currentTimeMillis()
                 )
-                repository.saveAcademicTerms(terms)
+                repository.saveAcademicCalendar(updatedCalendar)
+                repository.saveAcademicTerms(termsToSave)
                 showSuccess("Academic calendar saved successfully.")
+
+                if (syncManager.isOnline && syncManager.isUserSignedIn) {
+                    syncManager.syncLocalDataToCloud()
+                }
             } catch (error: Exception) {
                 showError("Couldn't save academic calendar: ${error.localizedMessage ?: "Unknown error"}")
             }

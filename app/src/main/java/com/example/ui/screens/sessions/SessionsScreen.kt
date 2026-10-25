@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.entity.TeachingSessionEntity
+import com.example.data.local.entity.displayStatus
 import com.example.ui.screens.home.SessionLogBottomSheetContent
 import com.example.ui.theme.EdenseAmber
 import com.example.ui.theme.EdenseAmberContainer
@@ -343,7 +344,7 @@ fun CarryForwardCard(item: ClassCarryForward) {
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = session.status,
+                            text = session.displayStatus(),
                             color = statusColor,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold
@@ -394,6 +395,24 @@ fun SessionHistoryCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val (statusColor, statusBg) = when (session.status) {
+                        "PARTIAL" -> EdenseAmber to EdenseAmberContainer
+                        "SKIPPED" -> MaterialTheme.colorScheme.error to MaterialTheme.colorScheme.errorContainer
+                        else -> EdenseGreen to EdenseGreenContainer
+                    }
+                    Box(
+                        modifier = Modifier
+                            .background(statusBg, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = session.displayStatus(),
+                            color = statusColor,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                     Icon(
                         Icons.Default.CalendarToday,
                         contentDescription = null,

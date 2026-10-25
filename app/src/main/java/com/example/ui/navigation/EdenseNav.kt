@@ -38,11 +38,20 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CloudQueue
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.data.remote.SyncState
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -93,6 +102,23 @@ fun EdenseNav(
     val profile by setupViewModel.profile.collectAsStateWithLifecycle()
     val calendar by setupViewModel.calendar.collectAsStateWithLifecycle()
     val selectedCount by setupViewModel.selectedCount.collectAsStateWithLifecycle()
+    val syncManager = setupViewModel.syncManager
+    val syncState by syncManager.syncState.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+
+    // 1. Open the app -> check internet connection -> sync if available, else fall back to offline
+    LaunchedEffect(Unit) {
+        syncManager.syncOnAppLaunch()
+    }
+
+    // 2. React to network changes when connectivity returns
+    LaunchedEffect(Unit) {
+        syncManager.networkMonitor.isOnlineFlow.collect { isOnline ->
+            if (isOnline && syncManager.isUserSignedIn) {
+                syncManager.syncOnAppLaunch()
+            }
+        }
+    }
 
     var currentScreen by rememberSaveable { mutableIntStateOf(NavDestination.HOME.ordinal) }
     var inSetupScreen by rememberSaveable { mutableStateOf(false) }
@@ -155,6 +181,91 @@ fun EdenseNav(
                     }
                 },
                 actions = {
+                    // Network & Cloud Sync Status Badge
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                when (syncState) {
+                                    is SyncState.Syncing, is SyncState.Checking -> EdenseAmber.copy(alpha = 0.15f)
+                                    is SyncState.Synced -> EdenseGreen.copy(alpha = 0.15f)
+                                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                }
+                            )
+                            .clickable {
+                                scope.launch {
+                                    syncManager.syncOnAppLaunch()
+                                }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 5.dp)
+                            .testTag("sync_status_badge")
+                    ) {
+                        when (syncState) {
+                            is SyncState.Syncing, is SyncState.Checking -> {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(12.dp),
+                                    strokeWidth = 2.dp,
+                                    color = EdenseAmber
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Syncing",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = EdenseAmber,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            is SyncState.Synced -> {
+                                Icon(
+                                    Icons.Default.CloudDone,
+                                    contentDescription = "Synced with Cloud",
+                                    modifier = Modifier.size(15.dp),
+                                    tint = EdenseGreen
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Synced",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = EdenseGreen,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            is SyncState.OfflineFallback -> {
+                                Icon(
+                                    Icons.Default.CloudOff,
+                                    contentDescription = "Offline Mode Active",
+                                    modifier = Modifier.size(15.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Offline",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            else -> {
+                                val online = syncManager.isOnline
+                                Icon(
+                                    if (online) Icons.Default.CloudQueue else Icons.Default.CloudOff,
+                                    contentDescription = if (online) "Online" else "Offline",
+                                    modifier = Modifier.size(15.dp),
+                                    tint = if (online) EdenseNavy else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (online) "Online" else "Offline",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (online) EdenseNavy else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
                     IconButton(
                         onClick = { inSetupScreen = true },
                         modifier = Modifier.testTag("top_settings_button")

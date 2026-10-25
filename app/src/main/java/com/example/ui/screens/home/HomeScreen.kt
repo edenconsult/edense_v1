@@ -775,7 +775,7 @@ fun SessionLogBottomSheetContent(
             FilterChip(
                 selected = status == "PARTIAL",
                 onClick = { status = "PARTIAL" },
-                label = { Text("Partial (Unfinished)") }
+                label = { Text("Unfinished") }
             )
             FilterChip(
                 selected = status == "SKIPPED",

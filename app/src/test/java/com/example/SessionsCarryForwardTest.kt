@@ -2,6 +2,8 @@ package com.example
 
 import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.TeachingSessionEntity
+import com.example.data.local.entity.displayStatus
+import com.example.data.local.entity.formatSessionStatus
 import com.example.ui.screens.sessions.carryForwardStableKey
 import com.example.ui.screens.sessions.buildClassCarryForwards
 import org.junit.Assert.assertEquals
@@ -73,5 +75,38 @@ class SessionsCarryForwardTest {
         val keys = summaries.mapIndexed { index, item -> carryForwardStableKey(index, item) }
 
         assertEquals(keys.size, keys.toSet().size)
+    }
+
+    @Test
+    fun sessionOutcomeDisplaysUnfinishedInsteadOfPartial() {
+        val partialSession = TeachingSessionEntity(
+            id = "s1",
+            subjectId = "math",
+            sessionDate = "2026-10-24",
+            lastTopicCovered = "Trigonometry",
+            nextTopicPlanned = "Sine Rule",
+            status = "PARTIAL"
+        )
+        val completedSession = TeachingSessionEntity(
+            id = "s2",
+            subjectId = "math",
+            sessionDate = "2026-10-24",
+            lastTopicCovered = "Algebra",
+            nextTopicPlanned = "",
+            status = "COMPLETED"
+        )
+        val skippedSession = TeachingSessionEntity(
+            id = "s3",
+            subjectId = "math",
+            sessionDate = "2026-10-24",
+            lastTopicCovered = "Holiday",
+            nextTopicPlanned = "",
+            status = "SKIPPED"
+        )
+
+        assertEquals("Unfinished", partialSession.displayStatus())
+        assertEquals("Unfinished", formatSessionStatus("PARTIAL"))
+        assertEquals("Completed", completedSession.displayStatus())
+        assertEquals("Skipped", skippedSession.displayStatus())
     }
 }
