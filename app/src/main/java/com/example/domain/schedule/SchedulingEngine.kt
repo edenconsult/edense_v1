@@ -8,6 +8,7 @@ import java.util.TimeZone
 data class ClassBlock(
     val blockId: String,
     val subjectId: String,
+    val dayOfWeek: Int,
     val subjectName: String,
     val className: String,
     val classroom: String,
@@ -197,6 +198,7 @@ object SchedulingEngine {
                 ClassBlock(
                     blockId = blockId,
                     subjectId = first.subjectId,
+                    dayOfWeek = first.dayOfWeek,
                     subjectName = subjectName,
                     className = className,
                     classroom = classroom,

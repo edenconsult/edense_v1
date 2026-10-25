@@ -6,9 +6,11 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.local.EdenseDatabase
 import com.example.data.local.entity.AcademicCalendarEntity
 import com.example.data.local.entity.AcademicTermEntity
-import com.example.data.local.entity.TeacherProfileEntity
-import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.PeriodEntity
+import com.example.data.local.entity.PendingDeletionEntity
+import com.example.data.local.entity.SubjectEntity
+import com.example.data.local.entity.TeacherProfileEntity
+import com.example.data.local.entity.TeachingSessionEntity
 import com.example.data.repository.EdenseRepository
 import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
@@ -186,5 +188,58 @@ class SaveCalendarAndProfileTest {
 
         repository.deleteTask(task.id)
         assertEquals(5, automaticSyncRequests)
+        assertTrue(
+            database.pendingDeletionDao().getPendingDeletions()
+                .contains(PendingDeletionEntity("tasks", task.id))
+        )
+        assertEquals(null, database.taskDao().getTaskByIdDirect(task.id))
+    }
+
+    @Test
+    fun deletingSessionAndReplacingTermsQueueCloudDeletions() = runBlocking {
+        val session = TeachingSessionEntity(
+            id = "session-to-delete",
+            subjectId = "math",
+            sessionDate = "2026-10-20",
+            lastTopicCovered = "Algebra",
+            nextTopicPlanned = "Geometry",
+            status = "COMPLETED"
+        )
+        database.teachingSessionDao().insertSession(session)
+        database.academicTermDao().replaceAll(
+            listOf(
+                AcademicTermEntity(
+                    id = "term-to-delete",
+                    name = "Old term",
+                    startDate = "2026-01-01",
+                    endDate = "2026-03-31",
+                    orderIndex = 0
+                )
+            )
+        )
+
+        repository.deleteSession(session.id)
+        repository.saveAcademicTerms(
+            listOf(
+                AcademicTermEntity(
+                    id = "replacement-term",
+                    name = "New term",
+                    startDate = "2026-04-01",
+                    endDate = "2026-06-30",
+                    orderIndex = 0
+                )
+            )
+        )
+
+        assertEquals(null, database.teachingSessionDao().getAllSessionsDirect().firstOrNull())
+        assertEquals(listOf("replacement-term"), database.academicTermDao().getTermsDirect().map { it.id })
+        assertTrue(
+            database.pendingDeletionDao().getPendingDeletions().containsAll(
+                listOf(
+                    PendingDeletionEntity("sessions", session.id),
+                    PendingDeletionEntity("terms", "term-to-delete")
+                )
+            )
+        )
     }
 }

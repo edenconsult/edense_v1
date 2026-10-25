@@ -7,7 +7,7 @@ with Kotlin, Jetpack Compose, Room, and Firebase Authentication/Cloud Firestore.
 ## Requirements
 
 - Android Studio with Android SDK 36 installed
-- JDK 11 or newer
+- JDK 17 or newer
 - An Android device or emulator running Android 7.0 (API 24) or newer
 
 The Android application ID is `com.ecreativesys.edense`.
@@ -58,6 +58,11 @@ Class and task reminders are scheduled by Android alarms, so Edense does not
 need to keep a continuous background process running. Allow notifications, and
 grant exact-alarm access where the device requires it for on-time reminders.
 Android force-stop can prevent alarms until the app is opened again.
+
+Local database changes remain available offline. WorkManager queues cloud
+uploads until a network connection is available, and locally deleted records
+are recorded for deletion from Firestore before a later cloud restore can
+reintroduce them.
 
 Lesson logs are linked to a scheduled period on the selected date and can be
 saved after the period has ended. Tasks may optionally link their reminder to

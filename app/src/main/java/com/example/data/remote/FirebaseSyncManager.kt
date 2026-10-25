@@ -18,15 +18,10 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
@@ -45,9 +40,7 @@ class FirebaseSyncManager(private val context: Context) {
 
     private val auth get() = Firebase.auth
     val networkMonitor by lazy { NetworkMonitor(context) }
-    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val uploadMutex = Mutex()
-    private var pendingSyncJob: Job? = null
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -70,17 +63,8 @@ class FirebaseSyncManager(private val context: Context) {
     val isOnline: Boolean
         get() = networkMonitor.isOnline
 
-    @Synchronized
     fun requestSync() {
-        if (!isOnline || !isUserSignedIn) return
-        pendingSyncJob?.cancel()
-        pendingSyncJob = syncScope.launch {
-            delay(AUTO_SYNC_DEBOUNCE_MS)
-            val result = syncLocalDataToCloud()
-            result.exceptionOrNull()?.let { error ->
-                Log.e("FirebaseSync", "Automatic sync failed", error)
-            }
-        }
+        FirebaseSyncWorkScheduler.enqueue(context)
     }
 
     /**
@@ -117,7 +101,6 @@ class FirebaseSyncManager(private val context: Context) {
      * then pushes local Room records to Firestore to guarantee cloud backup.
      */
     suspend fun performBidirectionalSync(uid: String): Result<Unit> = withContext(Dispatchers.IO) {
-        pendingSyncJob?.cancel()
         uploadMutex.withLock {
             val db = EdenseDatabase.getDatabase(context)
 
@@ -134,6 +117,7 @@ class FirebaseSyncManager(private val context: Context) {
                 _syncState.value = SyncState.Syncing
                 val userDoc = firestore.collection("users").document(uid)
 
+                applyPendingDeletions(userDoc, db)
                 restoreCloudDataToLocal(uid, userDoc, db)
                 ReminderRescheduler.rescheduleAll(context)
 
@@ -325,6 +309,7 @@ class FirebaseSyncManager(private val context: Context) {
         return try {
             _syncState.value = SyncState.Syncing
             val userDoc = firestore.collection("users").document(uid)
+            applyPendingDeletions(userDoc, db)
 
             // 1. Sync Profile
             val profile = db.teacherProfileDao().getProfileDirect()
@@ -406,7 +391,16 @@ class FirebaseSyncManager(private val context: Context) {
         }
     }
 
-    companion object {
-        private const val AUTO_SYNC_DEBOUNCE_MS = 500L
+    private suspend fun applyPendingDeletions(
+        userDoc: com.google.firebase.firestore.DocumentReference,
+        db: EdenseDatabase
+    ) {
+        PendingDeletionSync(db.pendingDeletionDao()).sync { deletion ->
+            userDoc.collection(deletion.collectionPath)
+                .document(deletion.documentId)
+                .delete()
+                .await()
+        }
     }
+
 }

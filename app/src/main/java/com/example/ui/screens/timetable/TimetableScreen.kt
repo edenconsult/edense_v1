@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Warning
@@ -81,6 +82,7 @@ fun TimetableScreen(
     val periodSlots by viewModel.periodSlots.collectAsStateWithLifecycle()
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var editingBlock by remember { mutableStateOf<ClassBlock?>(null) }
 
     val daysOfWeek = listOf("Mon", "Tue", "Wed", "Thu", "Fri")
 
@@ -88,7 +90,10 @@ fun TimetableScreen(
         floatingActionButton = {
             if (selectedSubjects.isNotEmpty()) {
                 FloatingActionButton(
-                    onClick = { showAddDialog = true },
+                    onClick = {
+                        editingBlock = null
+                        showAddDialog = true
+                    },
                     containerColor = EdenseNavy,
                     contentColor = Color.White,
                     modifier = Modifier.testTag("add_period_fab")
@@ -253,6 +258,10 @@ fun TimetableScreen(
                     items(blocks, key = { it.blockId }) { block ->
                         TimetableBlockCard(
                             block = block,
+                            onEdit = {
+                                editingBlock = block
+                                showAddDialog = true
+                            },
                             onDelete = { viewModel.deleteBlock(block) }
                         )
                     }
@@ -267,10 +276,25 @@ fun TimetableScreen(
             selectedSubjects = selectedSubjects,
             defaultDay = selectedDay,
             periodSlots = periodSlots,
+            initialBlock = editingBlock,
             onDismiss = { showAddDialog = false },
             onConfirm = { subjectId, day, start, className, classroom, isDouble ->
-                viewModel.addPeriod(subjectId, day, start, className, classroom, isDouble)
+                val block = editingBlock
+                if (block == null) {
+                    viewModel.addPeriod(subjectId, day, start, className, classroom, isDouble)
+                } else {
+                    viewModel.updatePeriodBlock(
+                        block,
+                        subjectId,
+                        day,
+                        start,
+                        className,
+                        classroom,
+                        isDouble
+                    )
+                }
                 showAddDialog = false
+                editingBlock = null
             }
         )
     }
@@ -279,6 +303,7 @@ fun TimetableScreen(
 @Composable
 fun TimetableBlockCard(
     block: ClassBlock,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -364,6 +389,16 @@ fun TimetableBlockCard(
                 }
             }
 
+            IconButton(
+                onClick = onEdit,
+                modifier = Modifier.testTag("edit_period_${block.blockId}")
+            ) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Edit Period",
+                    tint = EdenseNavy
+                )
+            }
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Default.Delete,
@@ -380,25 +415,41 @@ fun AddPeriodDialog(
     selectedSubjects: List<com.example.data.local.entity.SubjectEntity>,
     defaultDay: Int,
     periodSlots: List<com.example.domain.schedule.SchoolPeriodSlot>,
+    initialBlock: ClassBlock? = null,
     onDismiss: () -> Unit,
     onConfirm: (subjectId: String, day: Int, start: String, className: String, classroom: String, isDouble: Boolean) -> Unit
 ) {
-    var subjectId by remember { mutableStateOf(selectedSubjects.firstOrNull()?.id ?: "") }
-    var selectedDay by remember { mutableStateOf(defaultDay) }
-    var startTime by remember { mutableStateOf("07:00") }
-    var isDoublePeriod by remember { mutableStateOf(false) }
-    var className by remember {
-        mutableStateOf(selectedSubjects.firstOrNull()?.assignedClasses?.split(",")?.firstOrNull()?.trim().orEmpty())
+    var subjectId by remember(initialBlock, selectedSubjects) {
+        mutableStateOf(initialBlock?.subjectId ?: selectedSubjects.firstOrNull()?.id.orEmpty())
+    }
+    var selectedDay by remember(initialBlock, defaultDay) {
+        mutableStateOf(initialBlock?.dayOfWeek ?: defaultDay)
+    }
+    var startTime by remember(initialBlock, periodSlots) {
+        mutableStateOf(initialBlock?.startTime ?: periodSlots.firstOrNull()?.startTime.orEmpty())
+    }
+    var isDoublePeriod by remember(initialBlock) {
+        mutableStateOf(initialBlock?.isDoublePeriod ?: false)
+    }
+    var className by remember(initialBlock, selectedSubjects) {
+        mutableStateOf(
+            initialBlock?.className
+                ?: selectedSubjects.firstOrNull { it.id == subjectId }?.assignedClasses
+                    ?.split(",")?.firstOrNull()?.trim().orEmpty()
+        )
     }
     val selectedSubject = selectedSubjects.firstOrNull { it.id == subjectId }
     val classOptions = ClassroomAssignments.parse(selectedSubject?.assignedClasses.orEmpty())
     val classroomOptions = ClassroomAssignments.parse(selectedSubject?.assignedClassrooms.orEmpty())
-    var classroom by remember {
-        mutableStateOf(selectedSubjects.firstOrNull()?.let { subject ->
-            val classes = ClassroomAssignments.parse(subject.assignedClasses)
-            val rooms = ClassroomAssignments.parse(subject.assignedClassrooms)
-            ClassroomAssignments.roomForClass(className, classes, rooms)
-        } ?: "")
+    var classroom by remember(initialBlock, selectedSubjects) {
+        mutableStateOf(
+            initialBlock?.classroom?.takeIf { it.isNotBlank() } ?: selectedSubjects
+                .firstOrNull { it.id == subjectId }?.let { subject ->
+                val classes = ClassroomAssignments.parse(subject.assignedClasses)
+                val rooms = ClassroomAssignments.parse(subject.assignedClassrooms)
+                ClassroomAssignments.roomForClass(className, classes, rooms)
+            }.orEmpty()
+        )
     }
     val selectedSlotIndex = periodSlots.indexOfFirst { it.startTime == startTime }
     val selectedSlot = periodSlots.getOrNull(selectedSlotIndex)
@@ -412,7 +463,7 @@ fun AddPeriodDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Add Timetable Period",
+                text = if (initialBlock == null) "Add Timetable Period" else "Edit Timetable Period",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -565,9 +616,11 @@ fun AddPeriodDialog(
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = EdenseNavy),
-                modifier = Modifier.testTag("confirm_add_period")
+                modifier = Modifier.testTag(
+                    if (initialBlock == null) "confirm_add_period" else "confirm_edit_period"
+                )
             ) {
-                Text("Add Period")
+                Text(if (initialBlock == null) "Add Period" else "Save Changes")
             }
         },
         dismissButton = {

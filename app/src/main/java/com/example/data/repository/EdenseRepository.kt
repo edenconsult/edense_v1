@@ -14,6 +14,7 @@ import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.TaskEntity
 import com.example.data.local.entity.TeacherProfileEntity
 import com.example.data.local.entity.TeachingSessionEntity
+import com.example.data.local.entity.PendingDeletionEntity
 import com.example.domain.schedule.SchedulingEngine
 import com.example.domain.schedule.lessonEndTimeMillis
 import com.example.domain.schedule.isLessonPeriodPast
@@ -97,7 +98,17 @@ class EdenseRepository(
     }
 
     suspend fun saveAcademicTerms(terms: List<AcademicTermEntity>) {
-        database.academicTermDao().replaceAll(terms)
+        val retainedIds = terms.mapTo(mutableSetOf()) { it.id }
+        database.withTransaction {
+            database.academicTermDao().getTermsDirect()
+                .filterNot { it.id in retainedIds }
+                .forEach { term ->
+                    database.pendingDeletionDao().insert(
+                        PendingDeletionEntity("terms", term.id)
+                    )
+                }
+            database.academicTermDao().replaceAll(terms)
+        }
         rescheduleClassReminders()
         requestCloudSync()
     }
@@ -199,23 +210,28 @@ class EdenseRepository(
     }
 
     suspend fun deselectSubject(subjectId: String) {
-        val subjectBlocks = database.periodDao().getAllPeriodsDirect()
+        val subjectPeriods = database.periodDao().getAllPeriodsDirect()
             .filter { it.subjectId == subjectId }
-            .groupBy { it.blockId }
-        subjectBlocks.keys.forEach { blockId ->
+        subjectPeriods.map { it.blockId }.distinct().forEach { blockId ->
             AlarmScheduler.cancelAlarm(appContext, blockId)
             LessonLogPromptScheduler.cancel(appContext, blockId)
         }
-        database.subjectDao().updateSubjectSelection(
-            id = subjectId,
-            isSelected = false,
-            assignedClasses = "",
-            defaultClassroom = "",
-            assignedClassrooms = "",
-            targetPeriods = 0
-        )
-        // Also clean up timetable periods for this subject
-        database.periodDao().deletePeriodsForSubject(subjectId)
+        database.withTransaction {
+            subjectPeriods.forEach { period ->
+                database.pendingDeletionDao().insert(
+                    PendingDeletionEntity("periods", period.id)
+                )
+            }
+            database.subjectDao().updateSubjectSelection(
+                id = subjectId,
+                isSelected = false,
+                assignedClasses = "",
+                defaultClassroom = "",
+                assignedClassrooms = "",
+                targetPeriods = 0
+            )
+            database.periodDao().deletePeriodsForSubject(subjectId)
+        }
         rescheduleClassReminders()
         requestCloudSync()
     }
@@ -310,10 +326,88 @@ class EdenseRepository(
     }
 
     suspend fun deletePeriod(id: String, blockId: String) {
-        database.periodDao().deletePeriod(id)
+        database.withTransaction {
+            database.pendingDeletionDao().insert(
+                PendingDeletionEntity("periods", id)
+            )
+            database.periodDao().deletePeriod(id)
+        }
         AlarmScheduler.cancelAlarm(appContext, blockId)
         LessonLogPromptScheduler.cancel(appContext, blockId)
         rescheduleClassReminders()
+        requestCloudSync()
+    }
+
+    suspend fun updatePeriodBlock(
+        blockId: String,
+        subjectId: String,
+        dayOfWeek: Int,
+        startTime: String,
+        className: String,
+        classroom: String,
+        isDoublePeriod: Boolean,
+        breakfastBreakStart: String = "09:00",
+        breakfastBreakEnd: String = "09:30",
+        lunchBreakStart: String = "12:30",
+        lunchBreakEnd: String = "13:00"
+    ) {
+        val existing = database.periodDao().getAllPeriodsDirect()
+            .filter { it.blockId == blockId }
+            .sortedBy { SchedulingEngine.parseTimeToMinutes(it.startTime) }
+        require(existing.isNotEmpty()) { "The timetable block is no longer available." }
+
+        val periodSlots = SchedulingEngine.periodSlots(
+            breakfastBreakStart,
+            breakfastBreakEnd,
+            lunchBreakStart,
+            lunchBreakEnd
+        )
+        val selectedSlot = periodSlots.firstOrNull { it.startTime == startTime }
+            ?: throw IllegalArgumentException("No school period starts at $startTime")
+        val slotIndex = periodSlots.indexOf(selectedSlot)
+        val secondSlot = periodSlots.getOrNull(slotIndex + 1)
+        if (isDoublePeriod && (secondSlot == null || secondSlot.startMinute != selectedSlot.endMinute)) {
+            throw IllegalArgumentException("A double period must use two consecutive periods without a break")
+        }
+
+        val updatedSlots = if (isDoublePeriod) listOf(selectedSlot, secondSlot!!) else listOf(selectedSlot)
+        val updatedAt = System.currentTimeMillis()
+        val updatedPeriods = updatedSlots.mapIndexed { index, slot ->
+            PeriodEntity(
+                id = existing.getOrNull(index)?.id ?: UUID.randomUUID().toString(),
+                subjectId = subjectId,
+                dayOfWeek = dayOfWeek,
+                startTime = slot.startTime,
+                endTime = slot.endTime,
+                blockId = blockId,
+                classroom = classroom,
+                className = className,
+                updatedAt = updatedAt
+            )
+        }
+
+        database.withTransaction {
+            existing.drop(updatedPeriods.size).forEach { removed ->
+                database.pendingDeletionDao().insert(
+                    PendingDeletionEntity("periods", removed.id)
+                )
+                database.periodDao().deletePeriod(removed.id)
+            }
+            database.periodDao().insertPeriods(updatedPeriods)
+        }
+        AlarmScheduler.cancelAlarm(appContext, blockId)
+        LessonLogPromptScheduler.cancel(appContext, blockId)
+        requestCloudSync()
+        rescheduleClassReminders()
+    }
+
+    suspend fun deleteSession(id: String) {
+        database.withTransaction {
+            database.pendingDeletionDao().insert(
+                PendingDeletionEntity("sessions", id)
+            )
+            database.teachingSessionDao().deleteSession(id)
+        }
         requestCloudSync()
     }
 
@@ -471,7 +565,12 @@ class EdenseRepository(
     }
 
     suspend fun deleteTask(id: String) {
-        database.taskDao().deleteTask(id)
+        database.withTransaction {
+            database.pendingDeletionDao().insert(
+                PendingDeletionEntity("tasks", id)
+            )
+            database.taskDao().deleteTask(id)
+        }
         TaskReminderScheduler.cancel(appContext, id)
         EdenseNotificationManager.cancelTaskNotification(appContext, id)
         requestCloudSync()

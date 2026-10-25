@@ -100,7 +100,7 @@ class SessionsViewModel(private val repository: EdenseRepository) : ViewModel() 
 
     fun deleteSession(sessionId: String) {
         viewModelScope.launch {
-            repository.allSessions // triggers through dao
+            repository.deleteSession(sessionId)
         }
     }
 }

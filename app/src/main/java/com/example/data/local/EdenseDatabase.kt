@@ -10,6 +10,7 @@ import com.example.data.catalog.GhanaShsCatalog
 import com.example.data.local.dao.AcademicCalendarDao
 import com.example.data.local.dao.AcademicTermDao
 import com.example.data.local.dao.PeriodDao
+import com.example.data.local.dao.PendingDeletionDao
 import com.example.data.local.dao.SubjectDao
 import com.example.data.local.dao.TaskDao
 import com.example.data.local.dao.TeacherProfileDao
@@ -17,6 +18,7 @@ import com.example.data.local.dao.TeachingSessionDao
 import com.example.data.local.entity.AcademicCalendarEntity
 import com.example.data.local.entity.AcademicTermEntity
 import com.example.data.local.entity.PeriodEntity
+import com.example.data.local.entity.PendingDeletionEntity
 import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.TaskEntity
 import com.example.data.local.entity.TeacherProfileEntity
@@ -33,9 +35,10 @@ import kotlinx.coroutines.launch
         SubjectEntity::class,
         PeriodEntity::class,
         TeachingSessionEntity::class,
-        TaskEntity::class
+        TaskEntity::class,
+        PendingDeletionEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class EdenseDatabase : RoomDatabase() {
@@ -47,6 +50,7 @@ abstract class EdenseDatabase : RoomDatabase() {
     abstract fun periodDao(): PeriodDao
     abstract fun teachingSessionDao(): TeachingSessionDao
     abstract fun taskDao(): TaskDao
+    abstract fun pendingDeletionDao(): PendingDeletionDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -153,6 +157,20 @@ abstract class EdenseDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS pending_sync_deletions (
+                        collectionPath TEXT NOT NULL,
+                        documentId TEXT NOT NULL,
+                        PRIMARY KEY(collectionPath, documentId)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: EdenseDatabase? = null
 
@@ -171,6 +189,7 @@ abstract class EdenseDatabase : RoomDatabase() {
                     .addMigrations(MIGRATION_6_7)
                     .addMigrations(MIGRATION_7_8)
                     .addMigrations(MIGRATION_8_9)
+                    .addMigrations(MIGRATION_9_10)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

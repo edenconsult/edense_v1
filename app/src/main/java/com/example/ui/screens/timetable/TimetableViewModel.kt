@@ -93,37 +93,9 @@ class TimetableViewModel(private val repository: EdenseRepository) : ViewModel()
         isDoublePeriod: Boolean
     ) {
         viewModelScope.launch {
-            val slots = periodSlots.value
-            val startSlotIndex = slots.indexOfFirst { it.startTime == startTime }
-            if (startSlotIndex == -1) {
-                _conflictWarning.value = "Choose a valid one-hour school period."
-                return@launch
-            }
-            val startSlot = slots[startSlotIndex]
-            val nextSlot = slots.getOrNull(startSlotIndex + 1)
-            if (isDoublePeriod && (nextSlot == null || nextSlot.startMinute != startSlot.endMinute)) {
-                _conflictWarning.value = "A double period must use two consecutive periods without a break."
-                return@launch
-            }
-            val endTime = if (isDoublePeriod) nextSlot!!.endTime else startSlot.endTime
-            val newStartMin = startSlot.startMinute
-            val newEndMin = SchedulingEngine.parseTimeToMinutes(endTime)
-
-            // Check if there is an overlapping period on the same day
-            val existingToday = allPeriods.value.filter { it.dayOfWeek == dayOfWeek }
-            val hasOverlap = existingToday.any { existing ->
-                val exStart = SchedulingEngine.parseTimeToMinutes(existing.startTime)
-                val exEnd = SchedulingEngine.parseTimeToMinutes(existing.endTime)
-                newStartMin < exEnd && exStart < newEndMin
-            }
-
-            if (hasOverlap) {
-                _conflictWarning.value = "Warning: This class overlaps with an already scheduled period."
-                return@launch
-            } else {
-                _conflictWarning.value = null
-            }
-
+            val endTime = validatePeriodChanges(
+                subjectId, dayOfWeek, startTime, isDoublePeriod
+            ) ?: return@launch
             repository.addPeriod(
                 subjectId = subjectId,
                 dayOfWeek = dayOfWeek,
@@ -136,7 +108,76 @@ class TimetableViewModel(private val repository: EdenseRepository) : ViewModel()
                 lunchBreakStart = profile.value?.lunchBreakStart ?: "12:30",
                 lunchBreakEnd = profile.value?.lunchBreakEnd ?: "13:00"
             )
+            _conflictWarning.value = null
         }
+    }
+
+    fun updatePeriodBlock(
+        block: ClassBlock,
+        subjectId: String,
+        dayOfWeek: Int,
+        startTime: String,
+        className: String,
+        classroom: String,
+        isDoublePeriod: Boolean
+    ) {
+        viewModelScope.launch {
+            if (validatePeriodChanges(subjectId, dayOfWeek, startTime, isDoublePeriod, block.blockId) == null) {
+                return@launch
+            }
+            repository.updatePeriodBlock(
+                blockId = block.blockId,
+                subjectId = subjectId,
+                dayOfWeek = dayOfWeek,
+                startTime = startTime,
+                className = className,
+                classroom = classroom,
+                isDoublePeriod = isDoublePeriod,
+                breakfastBreakStart = profile.value?.breakfastBreakStart ?: "09:00",
+                breakfastBreakEnd = profile.value?.breakfastBreakEnd ?: "09:30",
+                lunchBreakStart = profile.value?.lunchBreakStart ?: "12:30",
+                lunchBreakEnd = profile.value?.lunchBreakEnd ?: "13:00"
+            )
+            _conflictWarning.value = null
+        }
+    }
+
+    private fun validatePeriodChanges(
+        subjectId: String,
+        dayOfWeek: Int,
+        startTime: String,
+        isDoublePeriod: Boolean,
+        ignoredBlockId: String? = null
+    ): String? {
+        if (selectedSubjects.value.none { it.id == subjectId }) {
+            _conflictWarning.value = "Choose one of your selected subjects."
+            return null
+        }
+        val slots = periodSlots.value
+        val startSlotIndex = slots.indexOfFirst { it.startTime == startTime }
+        if (startSlotIndex == -1) {
+            _conflictWarning.value = "Choose a valid one-hour school period."
+            return null
+        }
+        val startSlot = slots[startSlotIndex]
+        val nextSlot = slots.getOrNull(startSlotIndex + 1)
+        if (isDoublePeriod && (nextSlot == null || nextSlot.startMinute != startSlot.endMinute)) {
+            _conflictWarning.value = "A double period must use two consecutive periods without a break."
+            return null
+        }
+        val endTime = if (isDoublePeriod) nextSlot!!.endTime else startSlot.endTime
+        val newStartMin = startSlot.startMinute
+        val newEndMin = SchedulingEngine.parseTimeToMinutes(endTime)
+        val hasOverlap = allPeriods.value.any { existing ->
+            existing.dayOfWeek == dayOfWeek && existing.blockId != ignoredBlockId &&
+                newStartMin < SchedulingEngine.parseTimeToMinutes(existing.endTime) &&
+                SchedulingEngine.parseTimeToMinutes(existing.startTime) < newEndMin
+        }
+        if (hasOverlap) {
+            _conflictWarning.value = "Warning: This class overlaps with an already scheduled period."
+            return null
+        }
+        return endTime
     }
 
     fun deleteBlock(block: ClassBlock) {
