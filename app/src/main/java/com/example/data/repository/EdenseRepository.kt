@@ -13,6 +13,8 @@ import com.example.data.local.entity.TaskEntity
 import com.example.data.local.entity.TeacherProfileEntity
 import com.example.data.local.entity.TeachingSessionEntity
 import com.example.domain.schedule.SchedulingEngine
+import com.example.data.notification.EdenseNotificationManager
+import com.example.data.notification.TaskChangeType
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
@@ -317,6 +319,34 @@ class EdenseRepository(
         )
         database.taskDao().insertTask(task)
         TaskReminderScheduler.schedule(appContext, task)
+        val subject = database.subjectDao().getSelectedSubjectsDirect().firstOrNull { it.id == subjectId }
+        EdenseNotificationManager.notifyTaskChange(appContext, task, TaskChangeType.CREATED, subject?.name)
+    }
+
+    suspend fun updateTask(
+        id: String,
+        title: String,
+        subjectId: String,
+        type: String,
+        dueDate: String,
+        reminderTime: String,
+        notes: String
+    ) {
+        val existing = database.taskDao().getTaskByIdDirect(id) ?: return
+        val isRescheduled = existing.dueDate != dueDate || existing.reminderTime != reminderTime
+        val updated = existing.copy(
+            title = title,
+            subjectId = subjectId,
+            type = type,
+            dueDate = dueDate,
+            reminderTime = reminderTime,
+            notes = notes
+        )
+        database.taskDao().insertTask(updated)
+        TaskReminderScheduler.schedule(appContext, updated)
+        val subject = database.subjectDao().getSelectedSubjectsDirect().firstOrNull { it.id == subjectId }
+        val changeType = if (isRescheduled) TaskChangeType.RESCHEDULED else TaskChangeType.UPDATED
+        EdenseNotificationManager.notifyTaskChange(appContext, updated, changeType, subject?.name)
     }
 
     suspend fun toggleTaskCompleted(id: String, isCompleted: Boolean) {
@@ -324,6 +354,8 @@ class EdenseRepository(
         database.taskDao().setTaskCompleted(id, isCompleted)
         if (isCompleted) {
             TaskReminderScheduler.cancel(appContext, id)
+            EdenseNotificationManager.cancelTaskNotification(appContext, id)
+            EdenseNotificationManager.notifyTaskChange(appContext, task, TaskChangeType.COMPLETED)
         } else {
             TaskReminderScheduler.schedule(appContext, task.copy(isCompleted = false))
         }
@@ -332,5 +364,6 @@ class EdenseRepository(
     suspend fun deleteTask(id: String) {
         database.taskDao().deleteTask(id)
         TaskReminderScheduler.cancel(appContext, id)
+        EdenseNotificationManager.cancelTaskNotification(appContext, id)
     }
 }

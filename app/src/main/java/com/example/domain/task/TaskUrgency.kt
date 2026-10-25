@@ -13,6 +13,14 @@ enum class TaskUrgency(val label: String) {
     UNKNOWN("Date unavailable")
 }
 
+fun TaskUrgency.priorityRank(): Int = when (this) {
+    TaskUrgency.OVERDUE -> 1
+    TaskUrgency.DUE_TODAY -> 2
+    TaskUrgency.DUE_SOON -> 3
+    TaskUrgency.UPCOMING -> 4
+    TaskUrgency.UNKNOWN -> 5
+}
+
 fun taskUrgency(dueDate: String, today: String): TaskUrgency {
     val dueDay = parseIsoDate(dueDate) ?: return TaskUrgency.UNKNOWN
     val currentDay = parseIsoDate(today) ?: return TaskUrgency.UNKNOWN

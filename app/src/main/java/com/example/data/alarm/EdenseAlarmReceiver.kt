@@ -81,18 +81,12 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        val channelId = "edense_reminders_channel"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "Edense School & Task Reminders",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Alerts for upcoming classes and academic deadlines"
-                enableVibration(true)
-            }
-            notificationManager.createNotificationChannel(channel)
+        val channelId = if (isClassReminder) {
+            com.example.data.notification.EdenseNotificationManager.CHANNEL_CLASSES_ID
+        } else {
+            com.example.data.notification.EdenseNotificationManager.CHANNEL_TASKS_ID
         }
+        com.example.data.notification.EdenseNotificationManager.ensureChannels(context)
 
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK

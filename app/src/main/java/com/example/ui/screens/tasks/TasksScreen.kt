@@ -22,14 +22,24 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.ListAlt
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -56,6 +66,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.entity.TaskEntity
+import com.example.domain.task.TaskPriorityFilter
+import com.example.domain.task.TaskSortOrder
+import com.example.domain.task.TaskType
 import com.example.domain.task.TaskUrgency
 import com.example.domain.task.taskUrgency
 import com.example.ui.theme.EdenseAmber
@@ -74,11 +87,14 @@ fun TasksScreen(
     modifier: Modifier = Modifier
 ) {
     val tasks by viewModel.filteredTasks.collectAsStateWithLifecycle()
-    val filter by viewModel.filter.collectAsStateWithLifecycle()
-    val typeFilter by viewModel.typeFilter.collectAsStateWithLifecycle()
+    val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val selectedSubjects by viewModel.selectedSubjects.collectAsStateWithLifecycle()
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+    var priorityMenuExpanded by remember { mutableStateOf(false) }
+    var subjectMenuExpanded by remember { mutableStateOf(false) }
+    var typeMenuExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         floatingActionButton = {
@@ -100,46 +116,371 @@ fun TasksScreen(
                 .testTag("tasks_screen")
         ) {
             // Status Tabs
-            TabRow(selectedTabIndex = filter.ordinal) {
+            TabRow(selectedTabIndex = filterState.status.ordinal) {
                 Tab(
-                    selected = filter == TaskFilter.ALL,
+                    selected = filterState.status == TaskFilter.ALL,
                     onClick = { viewModel.setFilter(TaskFilter.ALL) },
-                    text = { Text("All") }
+                    text = { Text("All") },
+                    modifier = Modifier.testTag("task_tab_all")
                 )
                 Tab(
-                    selected = filter == TaskFilter.PENDING,
+                    selected = filterState.status == TaskFilter.PENDING,
                     onClick = { viewModel.setFilter(TaskFilter.PENDING) },
-                    text = { Text("Pending") }
+                    text = { Text("Pending") },
+                    modifier = Modifier.testTag("task_tab_pending")
                 )
                 Tab(
-                    selected = filter == TaskFilter.COMPLETED,
+                    selected = filterState.status == TaskFilter.COMPLETED,
                     onClick = { viewModel.setFilter(TaskFilter.COMPLETED) },
-                    text = { Text("Completed") }
+                    text = { Text("Completed") },
+                    modifier = Modifier.testTag("task_tab_completed")
                 )
             }
 
-            // Type Filter Chips
+            // Multi-criteria Filter & Sort Control Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                FilterChip(
-                    selected = typeFilter == "ALL",
-                    onClick = { viewModel.setTypeFilter("ALL") },
-                    label = { Text("All Types") }
+                // Sort Menu Chip
+                Box {
+                    FilterChip(
+                        selected = filterState.sortOrder != TaskSortOrder.DUE_DATE_ASC,
+                        onClick = { sortMenuExpanded = true },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Sort,
+                                contentDescription = "Sort Tasks",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        label = {
+                            Text("Sort: ${filterState.sortOrder.label.substringBefore(" (")}")
+                        },
+                        modifier = Modifier.testTag("task_sort_chip")
+                    )
+                    DropdownMenu(
+                        expanded = sortMenuExpanded,
+                        onDismissRequest = { sortMenuExpanded = false },
+                        modifier = Modifier.testTag("task_sort_menu")
+                    ) {
+                        TaskSortOrder.entries.forEach { order ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (filterState.sortOrder == order) {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = EdenseNavy,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        } else {
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                        }
+                                        Text(
+                                            order.label,
+                                            fontWeight = if (filterState.sortOrder == order) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setSortOrder(order)
+                                    sortMenuExpanded = false
+                                },
+                                modifier = Modifier.testTag("task_sort_option_${order.name}")
+                            )
+                        }
+                    }
+                }
+
+                // Priority Filter Chip
+                Box {
+                    FilterChip(
+                        selected = filterState.priority != TaskPriorityFilter.ALL,
+                        onClick = { priorityMenuExpanded = true },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.FilterList,
+                                contentDescription = "Filter by Priority",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        label = {
+                            Text(
+                                if (filterState.priority == TaskPriorityFilter.ALL) "Priority: All"
+                                else "Priority: ${filterState.priority.label}"
+                            )
+                        },
+                        modifier = Modifier.testTag("task_priority_filter_chip")
+                    )
+                    DropdownMenu(
+                        expanded = priorityMenuExpanded,
+                        onDismissRequest = { priorityMenuExpanded = false },
+                        modifier = Modifier.testTag("task_priority_menu")
+                    ) {
+                        TaskPriorityFilter.entries.forEach { prio ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (filterState.priority == prio) {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = EdenseNavy,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        } else {
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                        }
+                                        Text(
+                                            prio.label,
+                                            fontWeight = if (filterState.priority == prio) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setPriorityFilter(prio)
+                                    priorityMenuExpanded = false
+                                },
+                                modifier = Modifier.testTag("task_priority_option_${prio.name}")
+                            )
+                        }
+                    }
+                }
+
+                // Subject Filter Chip
+                if (selectedSubjects.isNotEmpty()) {
+                    val currentSubjectName = selectedSubjects.firstOrNull { it.id == filterState.subjectId }?.name
+                    Box {
+                        FilterChip(
+                            selected = filterState.subjectId != "ALL",
+                            onClick = { subjectMenuExpanded = true },
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    if (currentSubjectName == null) "Subject: All"
+                                    else "Subject: $currentSubjectName"
+                                )
+                            },
+                            modifier = Modifier.testTag("task_subject_filter_chip")
+                        )
+                        DropdownMenu(
+                            expanded = subjectMenuExpanded,
+                            onDismissRequest = { subjectMenuExpanded = false },
+                            modifier = Modifier.testTag("task_subject_menu")
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (filterState.subjectId == "ALL") {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = EdenseNavy,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        } else {
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                        }
+                                        Text("All Subjects", fontWeight = if (filterState.subjectId == "ALL") FontWeight.Bold else FontWeight.Normal)
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setSubjectFilter("ALL")
+                                    subjectMenuExpanded = false
+                                },
+                                modifier = Modifier.testTag("task_subject_option_all")
+                            )
+                            selectedSubjects.forEach { sub ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            if (filterState.subjectId == sub.id) {
+                                                Icon(
+                                                    Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = EdenseNavy,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            } else {
+                                                Spacer(modifier = Modifier.width(16.dp))
+                                            }
+                                            Text(
+                                                sub.name,
+                                                fontWeight = if (filterState.subjectId == sub.id) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.setSubjectFilter(sub.id)
+                                        subjectMenuExpanded = false
+                                    },
+                                    modifier = Modifier.testTag("task_subject_option_${sub.id}")
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Type Filter Chip
+                Box {
+                    FilterChip(
+                        selected = filterState.type != "ALL",
+                        onClick = { typeMenuExpanded = true },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        label = {
+                            Text(
+                                if (filterState.type == "ALL") "Type: All"
+                                else "Type: ${TaskType.displayLabel(filterState.type)}"
+                            )
+                        },
+                        modifier = Modifier.testTag("task_type_filter_chip")
+                    )
+                    DropdownMenu(
+                        expanded = typeMenuExpanded,
+                        onDismissRequest = { typeMenuExpanded = false },
+                        modifier = Modifier.testTag("task_type_menu")
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (filterState.type == "ALL") {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = EdenseNavy,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    } else {
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                    }
+                                    Text("All Types", fontWeight = if (filterState.type == "ALL") FontWeight.Bold else FontWeight.Normal)
+                                }
+                            },
+                            onClick = {
+                                viewModel.setTypeFilter("ALL")
+                                typeMenuExpanded = false
+                            },
+                            modifier = Modifier.testTag("task_type_filter_option_all")
+                        )
+                        TaskType.entries.forEach { taskTypeItem ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (filterState.type == taskTypeItem.code) {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = EdenseNavy,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        } else {
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                        }
+                                        Text(
+                                            taskTypeItem.displayName,
+                                            fontWeight = if (filterState.type == taskTypeItem.code) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setTypeFilter(taskTypeItem.code)
+                                    typeMenuExpanded = false
+                                },
+                                modifier = Modifier.testTag("task_type_filter_option_${taskTypeItem.code}")
+                            )
+                        }
+                    }
+                }
+
+                // Clear Filters Button
+                if (filterState.hasActiveSecondaryFilters) {
+                    FilterChip(
+                        selected = true,
+                        onClick = { viewModel.clearFilters() },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Clear Filters",
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = { Text("Clear Filters") },
+                        modifier = Modifier.testTag("task_clear_filters_chip")
+                    )
+                }
+            }
+
+            // Results count header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${tasks.size} ${if (tasks.size == 1) "task" else "tasks"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                FilterChip(
-                    selected = typeFilter == "ASSIGNMENT",
-                    onClick = { viewModel.setTypeFilter("ASSIGNMENT") },
-                    label = { Text("Assignments") }
-                )
-                FilterChip(
-                    selected = typeFilter == "TEST",
-                    onClick = { viewModel.setTypeFilter("TEST") },
-                    label = { Text("Tests/Exams") }
-                )
+                if (filterState.hasActiveSecondaryFilters) {
+                    Text(
+                        text = "Filtered view",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = EdenseAmber,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
 
             LazyColumn(
@@ -250,7 +591,7 @@ fun TaskItemCard(
                 ) {
                     val (typeColor, typeBg) = when (task.type) {
                         "TEST", "EXAM" -> EdenseAmber to EdenseAmberContainer
-                        "PROJECT" -> EdenseGreen to EdenseGreenContainer
+                        "PROJECT", "LESSON_PLAN" -> EdenseGreen to EdenseGreenContainer
                         else -> EdenseNavy to MaterialTheme.colorScheme.surfaceVariant
                     }
                     Box(
@@ -259,7 +600,7 @@ fun TaskItemCard(
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = task.type,
+                            text = TaskType.displayLabel(task.type),
                             color = typeColor,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold
@@ -321,6 +662,7 @@ fun TaskItemCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddTaskDialog(
     selectedSubjects: List<com.example.data.local.entity.SubjectEntity>,
@@ -329,14 +671,13 @@ fun AddTaskDialog(
 ) {
     var title by remember { mutableStateOf("") }
     var subjectId by remember { mutableStateOf(selectedSubjects.firstOrNull()?.id ?: "") }
-    var type by remember { mutableStateOf("ASSIGNMENT") }
+    var type by remember { mutableStateOf(TaskType.ASSIGNMENT.code) }
+    var typeDropdownExpanded by remember { mutableStateOf(false) }
     var dueDate by remember {
         mutableStateOf(SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()))
     }
     var reminderTime by remember { mutableStateOf("06:00") }
     var notes by remember { mutableStateOf("") }
-
-    val types = listOf("ASSIGNMENT", "TEST", "EXAM", "PROJECT")
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -359,25 +700,64 @@ fun AddTaskDialog(
 
                 if (selectedSubjects.isNotEmpty()) {
                     Text(text = "Subject:", style = MaterialTheme.typography.labelMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         selectedSubjects.forEach { sub ->
                             FilterChip(
                                 selected = subjectId == sub.id,
                                 onClick = { subjectId = sub.id },
-                                label = { Text(sub.name) }
+                                label = { Text(sub.name) },
+                                modifier = Modifier.testTag("task_subject_chip_${sub.id}")
                             )
                         }
                     }
                 }
 
-                Text(text = "Type:", style = MaterialTheme.typography.labelMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    types.forEach { t ->
-                        FilterChip(
-                            selected = type == t,
-                            onClick = { type = t },
-                            label = { Text(t) }
-                        )
+                // Academic Task Type - Select Dropdown
+                ExposedDropdownMenuBox(
+                    expanded = typeDropdownExpanded,
+                    onExpandedChange = { typeDropdownExpanded = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("add_task_type_dropdown_box")
+                ) {
+                    OutlinedTextField(
+                        value = TaskType.displayLabel(type),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Task Type") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeDropdownExpanded) },
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth()
+                            .testTag("add_task_type_dropdown")
+                    )
+                    ExposedDropdownMenu(
+                        expanded = typeDropdownExpanded,
+                        onDismissRequest = { typeDropdownExpanded = false },
+                        modifier = Modifier.testTag("add_task_type_menu")
+                    ) {
+                        TaskType.entries.forEach { taskTypeItem ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = taskTypeItem.displayName,
+                                        fontWeight = if (type == taskTypeItem.code) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                onClick = {
+                                    type = taskTypeItem.code
+                                    typeDropdownExpanded = false
+                                },
+                                contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding,
+                                modifier = Modifier.testTag("task_type_option_${taskTypeItem.code}")
+                            )
+                        }
                     }
                 }
 
@@ -403,7 +783,7 @@ fun AddTaskDialog(
                     value = notes,
                     onValueChange = { notes = it },
                     label = { Text("Notes (Optional)") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("add_task_notes")
                 )
             }
         },
@@ -422,7 +802,10 @@ fun AddTaskDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("cancel_add_task")
+            ) {
                 Text("Cancel")
             }
         }

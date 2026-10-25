@@ -61,6 +61,7 @@ import com.example.domain.schedule.ClassBlock
 import com.example.domain.schedule.ClassroomAssignments
 import com.example.domain.schedule.DayScheduleStatus
 import com.example.domain.home.timeOfDayGreeting
+import com.example.domain.task.TaskType
 import com.example.domain.task.taskUrgency
 import com.example.ui.theme.EdenseAmber
 import com.example.ui.theme.EdenseAmberContainer
@@ -305,7 +306,7 @@ fun HomeScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "${task.type} • ${taskUrgency(task.dueDate, currentDate).label} • Due ${task.dueDate} • Reminder ${task.reminderTime}",
+                                text = "${TaskType.displayLabel(task.type)} • ${taskUrgency(task.dueDate, currentDate).label} • Due ${task.dueDate} • Reminder ${task.reminderTime}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

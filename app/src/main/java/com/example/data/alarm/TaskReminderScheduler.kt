@@ -24,9 +24,10 @@ object TaskReminderScheduler {
         }
 
         val requestCode = "task_${task.id}".hashCode()
+        val typeLabel = com.example.domain.task.TaskType.displayLabel(task.type)
         val intent = Intent(context, EdenseAlarmReceiver::class.java).apply {
-            putExtra(EdenseAlarmReceiver.EXTRA_TITLE, "Task Due: ${task.title}")
-            putExtra(EdenseAlarmReceiver.EXTRA_MESSAGE, task.title)
+            putExtra(EdenseAlarmReceiver.EXTRA_TITLE, "Academic Deadline: ${task.title}")
+            putExtra(EdenseAlarmReceiver.EXTRA_MESSAGE, "$typeLabel is due today (${task.dueDate}) at ${task.reminderTime}.")
             putExtra(EdenseAlarmReceiver.EXTRA_NOTIFICATION_ID, requestCode)
             putExtra(EdenseAlarmReceiver.EXTRA_IS_CLASS, false)
         }
