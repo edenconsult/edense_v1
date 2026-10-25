@@ -18,7 +18,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -63,12 +66,14 @@ class TasksViewModel(private val repository: EdenseRepository) : ViewModel() {
     val allTasks: StateFlow<List<TaskEntity>> = repository.allTasks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val todayDate = MutableStateFlow(currentDate())
+
     val filteredTasks: StateFlow<List<TaskEntity>> = combine(
         allTasks,
         _filterState,
-        selectedSubjects
-    ) { tasks, state, subjects ->
-        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        selectedSubjects,
+        todayDate
+    ) { tasks, state, subjects, today ->
         val subjectMap = subjects.associateBy { it.id }
 
         tasks.filter { task ->
@@ -115,6 +120,15 @@ class TasksViewModel(private val repository: EdenseRepository) : ViewModel() {
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        viewModelScope.launch {
+            while (isActive) {
+                todayDate.value = currentDate()
+                delay(DATE_REFRESH_INTERVAL_MS)
+            }
+        }
+    }
 
     fun setFilter(filter: TaskFilter) {
         _filter.value = filter
@@ -175,6 +189,13 @@ class TasksViewModel(private val repository: EdenseRepository) : ViewModel() {
         viewModelScope.launch {
             repository.deleteTask(taskId)
         }
+    }
+
+    private fun currentDate(): String =
+        SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date())
+
+    private companion object {
+        const val DATE_REFRESH_INTERVAL_MS = 30_000L
     }
 }
 

@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import com.example.data.local.entity.AcademicCalendarEntity
 import com.example.data.local.entity.AcademicTermEntity
@@ -70,19 +69,12 @@ object AlarmScheduler {
         )
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.set(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-            }
+            AlarmDelivery.schedule(
+                alarmManager,
+                triggerAtMillis,
+                pendingIntent,
+                "AlarmScheduler"
+            )
         } catch (e: SecurityException) {
             Log.e("AlarmScheduler", "Unable to schedule class reminder for block $blockId", e)
         }

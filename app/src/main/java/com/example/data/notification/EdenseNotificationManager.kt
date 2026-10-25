@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.example.MainActivity
@@ -132,8 +133,8 @@ object EdenseNotificationManager {
                 .build()
 
             NotificationManagerCompat.from(context).notify(notificationId, notification)
-        } catch (_: SecurityException) {
-            // Notification permission might not be granted yet
+        } catch (error: SecurityException) {
+            Log.e("EdenseNotification", "Notification permission is unavailable.", error)
         }
     }
 }

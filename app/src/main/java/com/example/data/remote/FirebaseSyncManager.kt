@@ -11,6 +11,7 @@ import com.example.data.local.entity.SubjectEntity
 import com.example.data.local.entity.TaskEntity
 import com.example.data.local.entity.TeacherProfileEntity
 import com.example.data.local.entity.TeachingSessionEntity
+import com.example.data.alarm.ReminderRescheduler
 import com.example.data.network.NetworkMonitor
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
@@ -134,6 +135,7 @@ class FirebaseSyncManager(private val context: Context) {
                 val userDoc = firestore.collection("users").document(uid)
 
                 restoreCloudDataToLocal(uid, userDoc, db)
+                ReminderRescheduler.rescheduleAll(context)
 
                 val pushResult = uploadLocalDataToCloud()
                 if (pushResult.isFailure) {

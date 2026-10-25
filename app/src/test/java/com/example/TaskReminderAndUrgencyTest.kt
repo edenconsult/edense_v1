@@ -54,8 +54,17 @@ class TaskReminderAndUrgencyTest {
     fun urgencyIdentifiesOverdueTodaySoonAndUpcomingTasks() {
         assertEquals(TaskUrgency.OVERDUE, taskUrgency("2026-10-24", "2026-10-25"))
         assertEquals(TaskUrgency.DUE_TODAY, taskUrgency("2026-10-25", "2026-10-25"))
+        assertEquals(TaskUrgency.DUE_SOON, taskUrgency("2026-10-26", "2026-10-25"))
         assertEquals(TaskUrgency.DUE_SOON, taskUrgency("2026-10-27", "2026-10-25"))
         assertEquals(TaskUrgency.UPCOMING, taskUrgency("2026-10-28", "2026-10-25"))
         assertEquals(TaskUrgency.UNKNOWN, taskUrgency("invalid", "2026-10-25"))
+    }
+
+    @Test
+    fun dueSoonIsTheNextTwoCalendarDatesAndBecomesTodayWhenDateAdvances() {
+        assertEquals(TaskUrgency.DUE_SOON, taskUrgency("2026-10-26", "2026-10-25"))
+        assertEquals(TaskUrgency.DUE_SOON, taskUrgency("2026-10-27", "2026-10-25"))
+        assertEquals(TaskUrgency.DUE_TODAY, taskUrgency("2026-10-26", "2026-10-26"))
+        assertEquals(TaskUrgency.UPCOMING, taskUrgency("2026-10-28", "2026-10-25"))
     }
 }

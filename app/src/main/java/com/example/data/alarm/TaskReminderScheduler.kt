@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import com.example.data.local.entity.TaskEntity
 import java.text.ParsePosition
@@ -40,15 +39,12 @@ object TaskReminderScheduler {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
-            }
+            AlarmDelivery.schedule(
+                alarmManager,
+                triggerAtMillis,
+                pendingIntent,
+                "TaskReminderScheduler"
+            )
         } catch (e: SecurityException) {
             Log.e("TaskReminderScheduler", "Unable to schedule reminder for task ${task.id}", e)
         }
