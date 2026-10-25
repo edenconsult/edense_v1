@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.data.local.EdenseDatabase
+import com.example.domain.schedule.periodBlock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -75,6 +76,31 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
                         )
                     }
                     return@launch
+                }
+
+                if (!isClassReminder) {
+                    val taskId = intent.getStringExtra(EXTRA_TASK_ID)
+                    if (taskId != null) {
+                        val task = db.taskDao().getTaskByIdDirect(taskId)
+                        if (task == null || task.isCompleted) return@launch
+
+                        val linkedPeriod = task.periodBlockId.takeIf { it.isNotBlank() }
+                            ?.let { db.periodDao().getAllPeriodsDirect().periodBlock(it) }
+                            ?.takeIf { it.subjectId == task.subjectId }
+                        val isVacation = calendar?.isManualVacationMode == true ||
+                            (calendar?.pauseAlarmsDuringVacation == true &&
+                                calendar.isVacation(todayDate, terms))
+                        if (isVacation) {
+                            TaskReminderScheduler.schedule(
+                                context,
+                                task,
+                                linkedPeriod,
+                                calendar,
+                                terms
+                            )
+                            return@launch
+                        }
+                    }
                 }
 
                 if (isClassReminder) {
@@ -182,6 +208,7 @@ class EdenseAlarmReceiver : BroadcastReceiver() {
         const val EXTRA_CLASS_NAME = "extra_class_name"
         const val EXTRA_CLASSROOM = "extra_classroom"
         const val EXTRA_PROMPT_LOG = "extra_prompt_log"
+        const val EXTRA_TASK_ID = "extra_task_id"
         const val EXTRA_SUBJECT_ID = "extra_subject_id"
         const val EXTRA_END_TIME = "extra_end_time"
         const val EXTRA_SESSION_DATE = "extra_session_date"

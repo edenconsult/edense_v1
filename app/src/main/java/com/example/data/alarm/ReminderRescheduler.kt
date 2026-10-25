@@ -42,7 +42,7 @@ object ReminderRescheduler {
         tasks.forEach { task ->
             val linkedPeriod = periods.periodBlock(task.periodBlockId)
                 ?.takeIf { task.periodBlockId.isNotBlank() && it.subjectId == task.subjectId }
-            TaskReminderScheduler.schedule(context, task, linkedPeriod)
+            TaskReminderScheduler.schedule(context, task, linkedPeriod, calendar, terms)
         }
 
         Log.i(

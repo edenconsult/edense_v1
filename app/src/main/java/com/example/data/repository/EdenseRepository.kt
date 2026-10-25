@@ -149,11 +149,23 @@ class EdenseRepository(
     }
 
     private suspend fun rescheduleTasksForPeriods(periods: List<PeriodEntity>) {
+        val calendar = database.academicCalendarDao().getCalendarDirect()
+        val terms = database.academicTermDao().getTermsDirect()
         database.taskDao().getPendingTasksDirect().forEach { task ->
             val linkedPeriod = periods.periodBlock(task.periodBlockId)
                 ?.takeIf { task.periodBlockId.isNotBlank() && it.subjectId == task.subjectId }
-            TaskReminderScheduler.schedule(appContext, task, linkedPeriod)
+            TaskReminderScheduler.schedule(appContext, task, linkedPeriod, calendar, terms)
         }
+    }
+
+    private suspend fun scheduleTaskReminder(task: TaskEntity, linkedPeriod: PeriodEntity? = null) {
+        TaskReminderScheduler.schedule(
+            appContext,
+            task,
+            linkedPeriod,
+            database.academicCalendarDao().getCalendarDirect(),
+            database.academicTermDao().getTermsDirect()
+        )
     }
 
     /**
@@ -474,7 +486,7 @@ class EdenseRepository(
             database.teachingSessionDao().insertSession(session)
             followUpTask?.let { database.taskDao().insertTask(it) }
         }
-        followUpTask?.let { TaskReminderScheduler.schedule(appContext, it) }
+        followUpTask?.let { scheduleTaskReminder(it) }
         requestCloudSync()
     }
 
@@ -510,7 +522,7 @@ class EdenseRepository(
             isCompleted = false
         )
         database.taskDao().insertTask(task)
-        TaskReminderScheduler.schedule(appContext, task, linkedPeriod)
+        scheduleTaskReminder(task, linkedPeriod)
         val subject = database.subjectDao().getSelectedSubjectsDirect().firstOrNull { it.id == subjectId }
         EdenseNotificationManager.notifyTaskChange(appContext, task, TaskChangeType.CREATED, subject?.name)
         requestCloudSync()
@@ -541,7 +553,7 @@ class EdenseRepository(
                 .periodBlock(updated.periodBlockId)
                 ?.takeIf { it.subjectId == subjectId }
         }
-        TaskReminderScheduler.schedule(appContext, updated, linkedPeriod)
+        scheduleTaskReminder(updated, linkedPeriod)
         val subject = database.subjectDao().getSelectedSubjectsDirect().firstOrNull { it.id == subjectId }
         val changeType = if (isRescheduled) TaskChangeType.RESCHEDULED else TaskChangeType.UPDATED
         EdenseNotificationManager.notifyTaskChange(appContext, updated, changeType, subject?.name)
@@ -559,7 +571,7 @@ class EdenseRepository(
             val linkedPeriod = if (task.periodBlockId.isBlank()) null else {
                 database.periodDao().getAllPeriodsDirect().periodBlock(task.periodBlockId)
             }
-            TaskReminderScheduler.schedule(appContext, task.copy(isCompleted = false), linkedPeriod)
+            scheduleTaskReminder(task.copy(isCompleted = false), linkedPeriod)
         }
         requestCloudSync()
     }
