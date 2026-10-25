@@ -2,6 +2,8 @@ package com.example.domain.schedule
 
 import com.example.data.local.entity.PeriodEntity
 import com.example.data.local.entity.SubjectEntity
+import java.util.Calendar
+import java.util.TimeZone
 
 data class ClassBlock(
     val blockId: String,
@@ -113,6 +115,44 @@ object SchedulingEngine {
         val durationMinutes = parseTimeToMinutes(endTime) - parseTimeToMinutes(startTime)
         return ((durationMinutes + 59) / 60).coerceAtLeast(1)
     }
+
+    fun dayOfWeekFromDate(date: String): Int {
+        val parts = date.split("-")
+        require(parts.size == 3) { "Date must use yyyy-MM-dd format." }
+        val year = parts[0].toIntOrNull() ?: throw IllegalArgumentException("Invalid date: $date")
+        val month = parts[1].toIntOrNull() ?: throw IllegalArgumentException("Invalid date: $date")
+        val day = parts[2].toIntOrNull() ?: throw IllegalArgumentException("Invalid date: $date")
+        val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            isLenient = false
+            clear()
+            set(year, month - 1, day, 12, 0, 0)
+        }
+        return when (calendar.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> 1
+            Calendar.TUESDAY -> 2
+            Calendar.WEDNESDAY -> 3
+            Calendar.THURSDAY -> 4
+            Calendar.FRIDAY -> 5
+            Calendar.SATURDAY -> 6
+            Calendar.SUNDAY -> 7
+            else -> error("Unrecognized weekday for date: $date")
+        }
+    }
+
+    fun resolveDayScheduleForDate(
+        date: String,
+        currentTimeStr: String,
+        allPeriods: List<PeriodEntity>,
+        subjectMap: Map<String, SubjectEntity>,
+        isVacation: Boolean,
+        vacationResumesDate: String = ""
+    ): DayScheduleStatus = resolveDaySchedule(
+        currentTimeStr = currentTimeStr,
+        periodsToday = allPeriods.filter { it.dayOfWeek == dayOfWeekFromDate(date) },
+        subjectMap = subjectMap,
+        isVacation = isVacation,
+        vacationResumesDate = vacationResumesDate
+    )
 
     /**
      * Groups raw PeriodEntity records for a weekday into unified ClassBlocks,

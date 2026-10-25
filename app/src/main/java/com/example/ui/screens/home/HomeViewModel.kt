@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -47,25 +46,26 @@ class HomeViewModel(private val repository: EdenseRepository) : ViewModel() {
     val pendingTasks: StateFlow<List<TaskEntity>> = repository.pendingTasks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val currentTimeAndDate = combine(currentTimeStr, currentDateStr) { time, date ->
+        time to date
+    }
+
     // Real-time schedule state for today
     val scheduleStatus: StateFlow<DayScheduleStatus> = combine(
-        currentTimeStr,
+        currentTimeAndDate,
         repository.allPeriods,
         selectedSubjects,
         academicCalendar,
         repository.academicTerms
-    ) { time, periods, subjects, calendar, terms ->
+    ) { (time, date), periods, subjects, calendar, terms ->
         val subjectMap = subjects.associateBy { it.id }
-        val dayOfWeek = getDayOfWeekInt()
-        val periodsToday = periods.filter { it.dayOfWeek == dayOfWeek }
+        val isVacation = calendar?.isVacation(date, terms) ?: false
+        val resumesDate = calendar?.nextTermStartDate(date, terms).orEmpty()
 
-        val todayDate = getCurrentDateFormatted()
-        val isVacation = calendar?.isVacation(todayDate, terms) ?: false
-        val resumesDate = calendar?.nextTermStartDate(todayDate, terms).orEmpty()
-
-        SchedulingEngine.resolveDaySchedule(
+        SchedulingEngine.resolveDayScheduleForDate(
+            date = date,
             currentTimeStr = time,
-            periodsToday = periodsToday,
+            allPeriods = periods,
             subjectMap = subjectMap,
             isVacation = isVacation,
             vacationResumesDate = resumesDate
@@ -128,18 +128,6 @@ class HomeViewModel(private val repository: EdenseRepository) : ViewModel() {
         return SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault()).format(Date())
     }
 
-    private fun getDayOfWeekInt(): Int {
-        return when (Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) {
-            Calendar.MONDAY -> 1
-            Calendar.TUESDAY -> 2
-            Calendar.WEDNESDAY -> 3
-            Calendar.THURSDAY -> 4
-            Calendar.FRIDAY -> 5
-            Calendar.SATURDAY -> 6
-            Calendar.SUNDAY -> 7
-            else -> 1
-        }
-    }
 }
 
 class HomeViewModelFactory(private val repository: EdenseRepository) : ViewModelProvider.Factory {

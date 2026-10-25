@@ -126,6 +126,57 @@ class SchedulingEngineTest {
     }
 
     @Test
+    fun dayOfWeekFromDate_matchesTimetableDayNumbers() {
+        assertEquals(1, SchedulingEngine.dayOfWeekFromDate("2026-10-26"))
+        assertEquals(2, SchedulingEngine.dayOfWeekFromDate("2026-10-27"))
+        assertEquals(3, SchedulingEngine.dayOfWeekFromDate("2026-10-28"))
+        assertEquals(4, SchedulingEngine.dayOfWeekFromDate("2026-10-29"))
+        assertEquals(5, SchedulingEngine.dayOfWeekFromDate("2026-10-30"))
+        assertEquals(6, SchedulingEngine.dayOfWeekFromDate("2026-10-31"))
+        assertEquals(7, SchedulingEngine.dayOfWeekFromDate("2026-11-01"))
+    }
+
+    @Test
+    fun nowAndNextSchedule_areSelectedFromTheActualDateWeekday() {
+        val periods = listOf(
+            PeriodEntity(
+                id = "monday-class",
+                subjectId = "math_1",
+                dayOfWeek = 1,
+                startTime = "09:30",
+                endTime = "10:30",
+                blockId = "monday-block"
+            ),
+            PeriodEntity(
+                id = "tuesday-class",
+                subjectId = "eng_1",
+                dayOfWeek = 2,
+                startTime = "09:30",
+                endTime = "10:30",
+                blockId = "tuesday-block"
+            )
+        )
+
+        val monday = SchedulingEngine.resolveDayScheduleForDate(
+            date = "2026-10-26",
+            currentTimeStr = "10:00",
+            allPeriods = periods,
+            subjectMap = subjectMap,
+            isVacation = false
+        ) as DayScheduleStatus.Active
+        val tuesday = SchedulingEngine.resolveDayScheduleForDate(
+            date = "2026-10-27",
+            currentTimeStr = "10:00",
+            allPeriods = periods,
+            subjectMap = subjectMap,
+            isVacation = false
+        ) as DayScheduleStatus.Active
+
+        assertEquals("Core Mathematics", monday.currentBlock?.subjectName)
+        assertEquals("English Language", tuesday.currentBlock?.subjectName)
+    }
+
+    @Test
     fun doublePeriods_countAsTwoPeriodsForWeeklyTargets() {
         assertEquals(1, SchedulingEngine.periodUnitCount("07:00", "08:00"))
         assertEquals(2, SchedulingEngine.periodUnitCount("07:00", "09:00"))
